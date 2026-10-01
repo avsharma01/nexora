@@ -2,12 +2,17 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.database import engine
+from app.api.routers import company
+
 
 app = FastAPI(
     title="NEXORA API",
     description="AI Company Intelligence Platform",
     version="1.0.0",
 )
+
+
+app.include_router(company.router)
 
 
 @app.get("/")
