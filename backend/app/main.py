@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from sqlalchemy import text
-
+from app.api.routers import company, kpi
 from app.database import engine
-from app.api.routers import company
+
 
 
 app = FastAPI(
@@ -13,7 +13,7 @@ app = FastAPI(
 
 
 app.include_router(company.router)
-
+app.include_router(kpi.router)
 
 @app.get("/")
 def root():
