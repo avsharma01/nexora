@@ -1,6 +1,7 @@
 from app.database import Base, engine
 from app.models.company import Company
 from app.models.kpi import KPI
+from app.models.user import User
 
 
 def init_db():

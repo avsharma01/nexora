@@ -1,9 +1,8 @@
 from fastapi import FastAPI
 from sqlalchemy import text
-from app.api.routers import company, kpi
+
+from app.api.routers import auth, company, kpi
 from app.database import engine
-
-
 
 app = FastAPI(
     title="NEXORA API",
@@ -14,6 +13,8 @@ app = FastAPI(
 
 app.include_router(company.router)
 app.include_router(kpi.router)
+app.include_router(auth.router)
+
 
 @app.get("/")
 def root():
@@ -34,7 +35,6 @@ def database_health_check():
     with engine.connect() as connection:
         result = connection.execute(text("SELECT 1"))
         value = result.scalar()
-
     return {
         "database": "connected",
         "test_result": value
