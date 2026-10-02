@@ -15,5 +15,15 @@ class Settings:
     POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
     POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 
+    JWT_SECRET_KEY = os.getenv(
+        "JWT_SECRET_KEY",
+        "change_this_to_a_long_random_secret",
+    )
 
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(
+        os.getenv(
+            "JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
+            "30",
+        )
+    )
 settings = Settings()
