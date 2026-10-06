@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import require_role
+from app.core.roles import UserRole
 from app.database import get_db
 from app.schemas.company import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.services.company_service import (
@@ -25,6 +27,9 @@ router = APIRouter(
 def create_company_endpoint(
     company_data: CompanyCreate,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(UserRole.ADMIN, UserRole.ANALYST)
+    ),
 ):
     return create_company(db, company_data)
 
@@ -35,6 +40,13 @@ def create_company_endpoint(
 )
 def get_companies_endpoint(
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(
+            UserRole.ADMIN,
+            UserRole.ANALYST,
+            UserRole.VIEWER,
+        )
+    ),
 ):
     return get_companies(db)
 
@@ -46,6 +58,13 @@ def get_companies_endpoint(
 def get_company_endpoint(
     company_id: int,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(
+            UserRole.ADMIN,
+            UserRole.ANALYST,
+            UserRole.VIEWER,
+        )
+    ),
 ):
     company = get_company(db, company_id)
 
@@ -57,6 +76,7 @@ def get_company_endpoint(
 
     return company
 
+
 @router.put(
     "/{company_id}",
     response_model=CompanyResponse,
@@ -65,6 +85,9 @@ def update_company_endpoint(
     company_id: int,
     company_data: CompanyUpdate,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(UserRole.ADMIN, UserRole.ANALYST)
+    ),
 ):
     company = update_company(db, company_id, company_data)
 
@@ -76,6 +99,7 @@ def update_company_endpoint(
 
     return company
 
+
 @router.delete(
     "/{company_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -83,6 +107,9 @@ def update_company_endpoint(
 def delete_company_endpoint(
     company_id: int,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(UserRole.ADMIN)
+    ),
 ):
     deleted = delete_company(db, company_id)
 
