@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from sqlalchemy import text
 
-from app.api.routers import auth, company, kpi
+from app.api.routers import analytics, auth, company, kpi
 from app.database import engine
 
 app = FastAPI(
@@ -14,6 +14,7 @@ app = FastAPI(
 app.include_router(company.router)
 app.include_router(kpi.router)
 app.include_router(auth.router)
+app.include_router(analytics.router)
 
 
 @app.get("/")
@@ -35,6 +36,7 @@ def database_health_check():
     with engine.connect() as connection:
         result = connection.execute(text("SELECT 1"))
         value = result.scalar()
+
     return {
         "database": "connected",
         "test_result": value
