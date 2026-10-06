@@ -27,6 +27,8 @@ backend-controlled endpoints.
 - **KPI** CRUD: company_id, metric_name, metric_value, metric_date (long format, one row per metric per date).
 - Auth: register/login, Argon2, JWT, roles Admin / Analyst / Viewer, reusable `require_role` dependency.
 - NOT yet there: analytics, forecasting (Athira, in progress), anomalies, Docker integration (later stage).
+- Verified in code (2026-10-06): `require_role` exists but is NOT applied to company/kpi routes (they're open). No CORS middleware.
+  Docker = only `postgres:18` (no pgvector) on host port 5433; `.env.example` POSTGRES_HOST=postgres only works inside Docker → locally use localhost:5433.
 
 ## 4. Architecture of my module (target)
 ```
@@ -59,7 +61,7 @@ repo/
   .env.example, .gitignore, docker-compose.yml
   ai/  ml/  database/  docs/  frontend/  tests/     (top-level placeholders)
   backend/app/
-    main.py, config.py, database.py, init_db.py (tables probably via create_all)
+    main.py, config.py, database.py, init_db.py (create_all, no Alembic, run by hand)
     api/routers/   auth.py, company.py, kpi.py      → I add: ai.py        (POST /ai/ask)
     core/          dependencies.py, roles.py, security.py   (auth + require_role, reuse, don't edit)
     models/        company.py, kpi.py, user.py      → I add: ai_insight.py (Phase C)
@@ -85,7 +87,7 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 | Branches | `feature/ai-analyst-spec` (Phase A), then one branch per phase | Decided |
 
 ## 8. Progress
-- [ ] A0. Branch `feature/ai-analyst-spec` created from `develop`, `docs/ai-analyst/` committed, `CLAUDE.local.md` excluded via `.git/info/exclude`
+- [x] A0. Branch `feature/ai-analyst-spec` created from `develop`, `docs/ai-analyst/` committed, `CLAUDE.local.md` excluded via `.git/info/exclude` (verified 2026-10-06: b5cb595 on top of develop 88d038f, pushed)
 - [ ] A1. Repo explored by Claude Code; Open questions below answered where possible
 - [ ] A2. Messages sent to Vaibhav / Athira / Piyush / Arth
 - [ ] A3. SPEC.md finalized with real metric names + team feedback → PR to `develop`
@@ -101,11 +103,12 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 
 ## 9. Open questions
 - [x] Where do routers/models/schemas live? → `backend/app/api/routers`, `models`, `schemas`, `services` (see §6)
-- [ ] Is the top-level `ai/` folder meant for my pipeline code? (ask Vaibhav)
-- [ ] How are routers registered in `main.py`? Does `init_db.py` use `create_all` (no Alembic)? Exact table names?
-- [ ] Name/signature of the current-user and `require_role` dependencies?
-- [ ] API conventions: URL prefix (`/api/...`?), error body shape, response envelope?
-- [ ] Seed data: which `metric_name`s exist, units/currency, monthly or other granularity, how many months, how many companies?
+- [ ] Is the top-level `ai/` folder meant for my pipeline code? (ask Vaibhav) — `ai/` is empty and backend imports are `app.*` from `backend/`, so top-level `ai/` isn't importable without path hacks → lean `backend/app/ai/`.
+- [x] Router registration / init_db / tables → `app.include_router(x.router)` in main.py, no global prefix. `init_db.py` = `Base.metadata.create_all` (no Alembic), run manually (`python -m app.init_db`), creates missing tables only, never alters. Tables: `companies`, `kpis`, `users`. New models must be imported in `init_db.py` + `models/__init__.py`.
+- [x] Dependencies → `app.core.dependencies.get_current_user` returns `{"user_id": int, "role": "admin"|"analyst"|"viewer"}` (401 bad/expired token, unknown or inactive user). `require_role(*roles: UserRole)` factory: `Depends(require_role(UserRole.ADMIN, UserRole.ANALYST))` → same dict, 403 "Insufficient permissions". JWT HS256, `sub` = user id.
+- [x] API conventions → no `/api` prefix; routers set their own (`/auth`, `/companies`). Errors = FastAPI default `{"detail": "<msg>"}` (422: `{"detail": [{loc,msg,type}]}`). No envelope: return `response_model` directly. 201 create / 204 delete. Existence 404s live in the router. → mine: `POST /ai/ask`, `APIRouter(prefix="/ai", tags=["AI Analyst"])`.
+- [ ] Seed data: which `metric_name`s exist, units/currency, granularity, how much history, how many companies? — Code facts: `metric_name` free-text String(100), `metric_value` Numeric(18,2), `metric_date` any Date, no unit/currency column (KPI or Company), no unique (company_id, metric_name, metric_date) → duplicates possible. No seed script in repo. Rest → Athira.
 - [ ] Forecast output shape and table name (Athira)?
-- [ ] LLM provider + who holds the key?
-- [ ] Can a Viewer use the AI Analyst? Can every user see every company, or is access company-scoped?
+- [ ] LLM provider + who holds the key? — `.env.example` already has `AI_API_KEY=change_me`; `config.py` doesn't read it yet (add to `Settings`).
+- [ ] Can a Viewer use the AI Analyst? (policy → Vaibhav) — Company scoping: code has none (`User` has no company link; company/kpi routes have no auth at all).
+- [ ] FastAPI version? No requirements file in repo; `HTTPBearer` returns 403 (not 401) for a missing header in some versions → affects E20.

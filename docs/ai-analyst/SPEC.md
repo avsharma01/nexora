@@ -63,6 +63,9 @@ change and says "the available data does not explain the cause".
 
 **[CONFIRM — Athira]** the exact list of `metric_name` values, their units/currency, granularity
 (monthly?), and how much history exists.
+Schema facts (`models/kpi.py`): `metric_name` is free text, `metric_value` Numeric(18,2), `metric_date` any date
+(granularity not enforced), no unit column, no uniqueness on (company, metric, date) → the facts layer must
+handle duplicates and cannot read units from the DB.
 
 ---
 
@@ -89,6 +92,8 @@ change and says "the available data does not explain the cause".
 ```
 5. **company_id always comes from the request and is checked against the user's access.**
    It is never taken from the question text.
+   Today the schema has no user↔company link, so "access" = company exists (404) + role allowed (403).
+   Per-company access would need a schema change **[CONFIRM — Vaibhav]**.
 
 ---
 
@@ -117,7 +122,8 @@ insufficient-data template.
 
 - Always state the period: "March 2026", not "last month".
 - Write changes as absolute + percent: "−190,000 INR (−15.3%)".
-- Use the currency/unit from the seed data **[CONFIRM]**, Indian digit grouping or not **[CONFIRM]**, and percentages to 1 decimal place.
+- The DB stores no unit/currency, so use a fixed per-metric unit map agreed with Athira **[CONFIRM — Athira]**;
+  Indian digit grouping or not **[CONFIRM]**; percentages to 1 decimal place.
 - Prefix forecasts: "Forecast (estimate): …", with the interval if available.
 - Answer structure: **1-line direct answer → 2–4 supporting points → sources**.
 
@@ -125,7 +131,8 @@ insufficient-data template.
 
 ## 7. API contract (proposal for Anant Vaibhav)
 
-`POST /api/ai/ask` **[CONFIRM prefix/conventions]** · Auth: Bearer JWT · Roles: Admin, Analyst, Viewer **[CONFIRM]**
+`POST /ai/ask` (matches existing routers: no global `/api` prefix; `APIRouter(prefix="/ai")` registered in `main.py`)
+· Auth: Bearer JWT via `Depends(require_role(...))` · Roles: Admin, Analyst, Viewer **[CONFIRM Viewer — policy]**
 
 Request
 ```json
@@ -162,7 +169,8 @@ Response 200
 `kind` is one of `historical` | `forecast` | `scenario`.
 
 Errors: 401 no/invalid token · 403 role or company not allowed · 404 company not found ·
-422 validation · 503 LLM provider unavailable. **[CONFIRM error body shape]**
+422 validation · 503 LLM provider unavailable. Error body = FastAPI default `{"detail": "<message>"}`
+(422: `{"detail": [{loc, msg, type}]}`), same as the rest of the API.
 
 Persistence: every call is written to `ai_insights` (user_id, company_id, question, answer, status,
 is_grounded, sources, model, latency_ms, created_at).
