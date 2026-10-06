@@ -11,50 +11,66 @@ def get_company_analytics(
     kpis = (
         db.query(KPI)
         .filter(KPI.company_id == company_id)
-        .order_by(KPI.metric_name, KPI.metric_date.desc())
+        .order_by(
+            KPI.metric_name,
+            KPI.metric_date.desc(),
+            KPI.id.desc(),
+        )
         .all()
     )
 
     metrics: list[MetricAnalytics] = []
-
     metric_groups: dict[str, list[KPI]] = {}
 
     for kpi in kpis:
-        metric_groups.setdefault(kpi.metric_name, []).append(kpi)
+        metric_groups.setdefault(
+            kpi.metric_name,
+            [],
+        ).append(kpi)
 
     for metric_name, metric_records in metric_groups.items():
         latest = metric_records[0]
-        previous = metric_records[1] if len(metric_records) > 1 else None
 
         latest_value = float(latest.metric_value)
+        latest_date = latest.metric_date
 
-        if previous is None:
+        if len(metric_records) < 2:
             metrics.append(
                 MetricAnalytics(
                     metric_name=metric_name,
                     latest_value=latest_value,
+                    latest_date=latest_date,
                     previous_value=None,
+                    previous_date=None,
                     change=None,
                     change_percentage=None,
+                    comparison_available=False,
                 )
             )
             continue
 
+        previous = metric_records[1]
+
         previous_value = float(previous.metric_value)
+        previous_date = previous.metric_date
+
         change = latest_value - previous_value
 
         if previous_value == 0:
             change_percentage = None
         else:
-            change_percentage = (change / previous_value) * 100
+            change_percentage = (change / abs(previous_value)) * 100
 
         metrics.append(
             MetricAnalytics(
                 metric_name=metric_name,
                 latest_value=latest_value,
+                latest_date=latest_date,
                 previous_value=previous_value,
+                previous_date=previous_date,
                 change=change,
                 change_percentage=change_percentage,
+                comparison_available=True,
             )
         )
 
