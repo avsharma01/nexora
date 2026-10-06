@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import require_role
+from app.core.roles import UserRole
 from app.database import get_db
 from app.models.company import Company
 from app.schemas.kpi import KPICreate, KPIResponse, KPIUpdate
@@ -26,6 +28,9 @@ def create_kpi_endpoint(
     company_id: int,
     kpi_data: KPICreate,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(UserRole.ADMIN, UserRole.ANALYST)
+    ),
 ):
     company = db.get(Company, company_id)
 
@@ -45,6 +50,13 @@ def create_kpi_endpoint(
 def get_company_kpis_endpoint(
     company_id: int,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(
+            UserRole.ADMIN,
+            UserRole.ANALYST,
+            UserRole.VIEWER,
+        )
+    ),
 ):
     company = db.get(Company, company_id)
 
@@ -64,6 +76,13 @@ def get_company_kpis_endpoint(
 def get_kpi_endpoint(
     kpi_id: int,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(
+            UserRole.ADMIN,
+            UserRole.ANALYST,
+            UserRole.VIEWER,
+        )
+    ),
 ):
     kpi = get_kpi(db, kpi_id)
 
@@ -84,6 +103,9 @@ def update_kpi_endpoint(
     kpi_id: int,
     kpi_data: KPIUpdate,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(UserRole.ADMIN, UserRole.ANALYST)
+    ),
 ):
     kpi = update_kpi(db, kpi_id, kpi_data)
 
@@ -103,6 +125,9 @@ def update_kpi_endpoint(
 def delete_kpi_endpoint(
     kpi_id: int,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_role(UserRole.ADMIN)
+    ),
 ):
     deleted = delete_kpi(db, kpi_id)
 
