@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.models.kpi import KPI
@@ -21,8 +23,13 @@ def get_company_analytics(
 
     metrics: list[MetricAnalytics] = []
     metric_groups: dict[str, list[KPI]] = {}
+    seen_periods: set[tuple[str, date]] = set()
 
     for kpi in kpis:
+        period_key = (kpi.metric_name, kpi.metric_date)
+        if period_key in seen_periods:
+            continue
+        seen_periods.add(period_key)
         metric_groups.setdefault(
             kpi.metric_name,
             [],

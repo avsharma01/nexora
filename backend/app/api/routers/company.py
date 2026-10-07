@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import require_role
 from app.core.roles import UserRole
 from app.database import get_db
+from app.models.company import Company
 from app.schemas.company import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.services.company_service import (
     create_company,
@@ -31,7 +32,13 @@ def create_company_endpoint(
         require_role(UserRole.ADMIN, UserRole.ANALYST)
     ),
 ):
-    return create_company(db, company_data)
+    company = create_company(db, company_data)
+    if company is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Company name already exists",
+        )
+    return company
 
 
 @router.get(
@@ -92,9 +99,14 @@ def update_company_endpoint(
     company = update_company(db, company_id, company_data)
 
     if company is None:
+        if db.get(Company, company_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Company not found",
+            )
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Company not found",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Company name already exists",
         )
 
     return company
@@ -114,6 +126,11 @@ def delete_company_endpoint(
     deleted = delete_company(db, company_id)
 
     if not deleted:
+        if get_company(db, company_id) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Company has related records and cannot be deleted",
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Company not found",

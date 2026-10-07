@@ -1,13 +1,14 @@
+from sqlalchemy.engine import Engine
+
 from app.database import Base, engine
-from app.models.company import Company
-from app.models.kpi import KPI
-from app.models.user import User
+from app import models  # noqa: F401 - register every model with Base.metadata
 
 
-def init_db():
-    Base.metadata.create_all(bind=engine)
+def init_db(bind: Engine = engine) -> None:
+    """Create any missing NEXORA tables on the supplied database engine."""
+    Base.metadata.create_all(bind=bind)
 
 
 if __name__ == "__main__":
     init_db()
-    print("Database tables created successfully.")
+    print("Database schema initialized successfully.")
