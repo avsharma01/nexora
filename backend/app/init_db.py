@@ -1,6 +1,7 @@
 from sqlalchemy import text
 
 from app.database import Base, engine
+from app.models.ai_document import AIDocument, AIDocumentChunk
 from app.models.ai_insight import AIInsight
 from app.models.company import Company
 from app.models.kpi import KPI
