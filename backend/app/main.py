@@ -11,10 +11,20 @@ from app.api.routers import (
 )
 from app.database import engine
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="NEXORA API",
     description="AI Company Intelligence Platform",
     version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

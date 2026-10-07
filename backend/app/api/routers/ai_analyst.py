@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.ai.llm import LLMError
 from app.core.dependencies import require_role
 from app.core.roles import UserRole
 from app.database import get_db
@@ -45,8 +46,16 @@ def analyze_company(
             detail="Question cannot be empty",
         )
 
-    return get_ai_analysis(
-        db=db,
-        company_id=company_id,
-        question=request_data.question,
-    )
+    try:
+        return get_ai_analysis(
+            db=db,
+            company_id=company_id,
+            question=request_data.question,
+            user_id=current_user["user_id"],
+            history=[turn.model_dump() for turn in request_data.history],
+        )
+    except LLMError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service is temporarily unavailable",
+        )

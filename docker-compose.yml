@@ -1,7 +1,7 @@
 services:
 
   postgres:
-    image: postgres:18
+    image: pgvector/pgvector:pg18-trixie
     container_name: nexora-postgres
     restart: unless-stopped
     environment:

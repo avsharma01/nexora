@@ -1,9 +1,21 @@
-# Runtime and test dependencies for the current NEXORA backend (Python 3.12).
-fastapi>=0.115,<1.0
-pydantic>=2.8,<3.0
-SQLAlchemy>=2.0.36,<2.1
-psycopg[binary]>=3.2,<4.0
-python-dotenv>=1.0,<2.0
-PyJWT>=2.10,<3.0
-pwdlib[argon2]>=0.2.1,<1.0
-pytest>=8.3,<9.0
+# NEXORA backend, AI analyst, and test dependencies (Python 3.12).
+# Install with: python -m pip install -r requirements.txt
+
+# API, server, schemas, and database
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+SQLAlchemy==2.0.54
+psycopg[binary]==3.3.6
+python-dotenv==1.2.4
+PyJWT==2.15.1
+pwdlib[argon2]==0.3.1
+
+# AI Analyst and pgvector
+openai==3.26.0
+fastembed==0.8.1
+pgvector==0.5.0
+
+# Tests
+pytest==8.4.2
+httpx==0.28.1
