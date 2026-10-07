@@ -46,11 +46,11 @@ _FAKE_CITATION_RE = re.compile(
 # ("fell to -23,56,941 INR" is a negative level and keeps its sign).
 _DOUBLE_SIGN_RE = re.compile(
     rf"\b(?P<verb>{_DIRECTION_WORDS})(?P<gap>\s+(?:by|of)\s+|\s+)(?:an?\s+)?[+\-]\s?(?P<num>\d[\d,]*(?:\.\d+)?)"
-    r"(?P<tail>\s*(?:INR|%|lakh|crore|million)?)(?:\s*\(\s*[+\-]\s?(?P<pct>\d[\d,]*(?:\.\d+)?%)\s*\))?",
+    r"(?P<tail>\s*(?:%|lakh|crore|million|[A-Z]{3}\b)?)(?:\s*\(\s*[+\-]\s?(?P<pct>\d[\d,]*(?:\.\d+)?%)\s*\))?",
     re.IGNORECASE,
 )
 _PCT_AFTER_DIRECTION_RE = re.compile(
-    rf"\b(?P<head>(?:{_DIRECTION_WORDS})(?:\s+(?:by|of))?\s+\d[\d,]*(?:\.\d+)?\s*(?:INR|lakh|crore|million)?)"
+    rf"\b(?P<head>(?:{_DIRECTION_WORDS})(?:\s+(?:by|of))?\s+\d[\d,]*(?:\.\d+)?\s*(?:lakh|crore|million|[A-Z]{{3}}\b)?)"
     r"\s*\(\s*[+\-]\s?(?P<pct>\d[\d,]*(?:\.\d+)?%)\s*\)",
     re.IGNORECASE,
 )

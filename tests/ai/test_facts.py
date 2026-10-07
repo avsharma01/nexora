@@ -52,6 +52,15 @@ def test_formatting_rounds_only_in_text():
     assert format_pct(None).startswith("n/a")
 
 
+def test_format_value_other_currencies():
+    from app.ai.facts import format_value
+    assert format_value(1050000, "USD") == "1,050,000 USD"
+    assert format_value(-190000.5, "USD") == "-190,000.50 USD"
+    assert format_value(1050000, "INR") == "10,50,000 INR"
+    assert format_value(1050000, None) == "1,050,000"
+    assert format_value(10.126, None) == "10.13"
+
+
 def test_parse_period():
     assert parse_period("2025-03").label == "March 2025"
     assert parse_period("2025-q2").months == [(2025, 4), (2025, 5), (2025, 6)]

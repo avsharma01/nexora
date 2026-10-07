@@ -6,7 +6,8 @@ same `companies` / `kpis` tables that real data uses.
 
 Run from backend/:
     python -m scripts.seed_ai_test_data           # insert (skips companies that already exist)
-    python -m scripts.seed_ai_test_data --reset   # delete ONLY the fake companies + their KPIs
+    python -m scripts.seed_ai_test_data --reset   # delete ONLY the fake companies + their KPIs,
+                                                  # documents and ai_insights rows
 """
 
 import argparse
@@ -18,6 +19,8 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.database import engine
+from app.models.ai_document import AIDocument
+from app.models.ai_insight import AIInsight
 from app.models.company import Company
 from app.models.kpi import KPI
 
@@ -131,9 +134,18 @@ def reset(db: Session) -> None:
         company = _existing(db, spec["name"])
         if company is None:
             continue
+        # Rows that point at the company must go first (foreign keys).
+        docs = db.query(AIDocument).filter(AIDocument.company_id == company.id).all()
+        for doc in docs:
+            db.delete(doc)  # cascades to ai_document_chunks
+        insights = db.query(AIInsight).filter(AIInsight.company_id == company.id).delete()
         deleted = db.query(KPI).filter(KPI.company_id == company.id).delete()
+        db.flush()
         db.delete(company)
-        print(f"delete {spec['name']} (id {company.id}) - {deleted} KPI rows")
+        print(
+            f"delete {spec['name']} (id {company.id}) - {deleted} KPI rows, "
+            f"{len(docs)} documents, {insights} ai_insights rows"
+        )
     db.commit()
 
 

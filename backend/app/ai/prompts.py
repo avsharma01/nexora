@@ -21,11 +21,11 @@ Format:
 - Plain professional text only. No emoji. No markdown headings, no bold or italics, no tables.
 - Start with ONE complete sentence that directly answers the question, including the key number and the period (e.g. "March 2025", never "last month"). Never start with a title, label or bare date line.
 - Then 1 to 4 short supporting points, each on its own line starting with "- ". Do not repeat the first sentence. Each point must add a relevant fact from the context (for example the change versus the previous period, or how a related metric moved). Never describe the context itself (do not write things like "the computed fact shows").
-- Write changes as absolute and percent, exactly as given in the facts ("<change> INR (<percent>%)").
+- Write changes as absolute and percent, exactly as given in the facts ("<change> <currency> (<percent>%)").
 - When a direction word already says which way it moved (rose, fell, increased, decreased, grew, dropped), write the amount and percent WITHOUT a sign: "fell by 49,41,292 INR (191.2%)", never "fell by -49,41,292 INR". Keep the sign for levels that are negative ("profit was -23,56,941 INR").
 - For a summary or a value question, state each metric's value itself (e.g. its latest value), not only its change.
 - Whenever you state a change or growth over a range (trend, growth comparison, period comparison), name both the start and the end period, e.g. "from January 2025 to December 2025" or "from Q1 2025 to Q2 2025". Never write just "in 2025" or "over the period" for a change.
-- Write money as in the context (Indian digit grouping followed by INR)."""
+- Write money exactly as in the context (same digit grouping, followed by the currency code shown there)."""
 
 
 INSUFFICIENT_TEMPLATE = (

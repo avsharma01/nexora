@@ -158,6 +158,8 @@ def test_clean_text_removes_markdown_and_emoji():
         ("Revenue fell by 47,61,602 INR (-36.5%) from February", "Revenue fell by 47,61,602 INR (36.5%) from February"),
         ("Expenses increased +20.4% while revenue grew +11.7%", "Expenses increased 20.4% while revenue grew 11.7%"),
         ("a profit loss of -23,56,941 INR [D2].", "a profit loss of 23,56,941 INR [D2]."),
+        ("Revenue fell by -12,400 USD (-2.1%).", "Revenue fell by 12,400 USD (2.1%)."),
+        ("Revenue fell by 12,400 USD (-2.1%).", "Revenue fell by 12,400 USD (2.1%)."),
         ("Revenue rose to 26,78,333 INR [historical data].", "Revenue rose to 26,78,333 INR."),
         # unchanged: negative levels and neutral wording keep their sign
         ("Profit fell to -23,56,941 INR in March.", "Profit fell to -23,56,941 INR in March."),

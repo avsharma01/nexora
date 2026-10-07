@@ -74,14 +74,23 @@ def format_inr(value: float) -> str:
     return sign + text
 
 
+def _plain_number(value: float) -> str:
+    rounded = round(value, 2)
+    if float(rounded).is_integer():
+        return f"{int(rounded):,}"
+    return f"{rounded:,.2f}"
+
+
 def format_value(value: float, unit: str | None) -> str:
+    """INR -> Indian grouping ('10,50,000 INR'); other currency codes -> western
+    grouping ('1,050,000 USD'); '%' -> 1 decimal; no unit -> plain number."""
     if unit == "INR":
         return f"{format_inr(value)} INR"
     if unit == "%":
         return f"{round(value, 1):.1f}%"
-    if float(value).is_integer():
-        return f"{int(value):,}"
-    return f"{value:,.2f}"
+    if unit:
+        return f"{_plain_number(value)} {unit}"
+    return _plain_number(value)
 
 
 def format_change(value: float, unit: str | None) -> str:

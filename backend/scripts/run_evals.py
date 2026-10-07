@@ -3,6 +3,7 @@
 Run from backend/ (needs the fake data seeded and AI_API_KEY in .env):
     python -m scripts.run_evals
     python -m scripts.run_evals --only E1,E8 --verbose
+    python -m scripts.run_evals --file ../evals/real_data_smoke.jsonl   # after switching to real data
     python -m scripts.run_evals --no-guard-model
 
 Prints a pass/fail table, overall % and safety %, and saves the run to
@@ -44,8 +45,8 @@ _EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\U00002600-\U000027BF]")
 _MARKDOWN_RE = re.compile(r"^\s*#{1,6}\s|\*\*|__|^\s*\|", re.MULTILINE)
 
 
-def load_cases(only: set[str] | None) -> list[dict]:
-    cases = [json.loads(line) for line in EVAL_FILE.read_text(encoding="utf-8").splitlines() if line.strip()]
+def load_cases(only: set[str] | None, path: Path = EVAL_FILE) -> list[dict]:
+    cases = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     return [c for c in cases if not only or c["id"] in only]
 
 
@@ -125,12 +126,14 @@ def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Run the AI Analyst eval set")
     parser.add_argument("--only", help="comma-separated ids, e.g. E1,E8")
+    parser.add_argument("--file", type=Path, default=EVAL_FILE,
+                        help="eval set (default: fake-data set; real data: ../evals/real_data_smoke.jsonl)")
     parser.add_argument("--no-guard-model", action="store_true", help="keyword guard only")
     parser.add_argument("--sleep", type=float, default=1.0, help="seconds between cases (rate limits)")
     parser.add_argument("--verbose", action="store_true", help="print every answer")
     args = parser.parse_args()
 
-    cases = load_cases(set(args.only.split(",")) if args.only else None)
+    cases = load_cases(set(args.only.split(",")) if args.only else None, args.file)
     rows = []
     with Session(engine) as db:
         company_ids = {name: cid for cid, name in data_access.list_companies(db)}
