@@ -8,7 +8,6 @@ from app.models.model_evaluation import ModelEvaluation
 from app.models.scenario import Scenario
 from app.models.user import User
 
-
 __all__ = [
     "AIDocument",
     "AIDocumentChunk",
