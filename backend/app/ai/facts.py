@@ -42,6 +42,8 @@ class Fact:
     kind: str = "historical"
     data: dict = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    metric: str | None = None
+    label: str = ""  # short human label for UI figures / sources
 
 
 # --------------------------------------------------------------------------- #
@@ -140,6 +142,25 @@ class Period:
         if self.kind == "quarter":
             return f"Q{self.index} {self.year}"
         return str(self.year)
+
+
+def previous_period(period: "Period") -> "Period":
+    """The period just before: month -> previous month, Q1 -> Q4 of last year, etc."""
+    if period.kind == "month":
+        y, m = period.year, period.index
+        return Period("month", y - 1, 12) if m == 1 else Period("month", y, m - 1)
+    if period.kind == "quarter":
+        y, q = period.year, period.index
+        return Period("quarter", y - 1, 4) if q == 1 else Period("quarter", y, q - 1)
+    return Period("year", period.year - 1)
+
+
+def months_back(end: "Period", n: int) -> "Period":
+    """The month n months before `end` (a month Period)."""
+    y, m = end.year, end.index - n
+    while m < 1:
+        m, y = m + 12, y - 1
+    return Period("month", y, m)
 
 
 def parse_period(period: "str | date | Period") -> Period:
@@ -307,6 +328,8 @@ def value_at(
         period=p.key,
         data=data,
         notes=notes + _partial_note(p, total),
+        metric=metric,
+        label=f"{name}, {p.label}",
     )
 
 
@@ -345,6 +368,8 @@ def trend(
                 "points": 1, "gaps": [],
             },
             notes=notes + ["Based on limited data: a single data point."],
+            metric=metric,
+            label=f"{name}, {month_label(first)}",
         )
 
     change = last_value - first_value
@@ -379,6 +404,8 @@ def trend(
             "min": {"period": _month_key(low), "value": months[low][1]},
         },
         notes=notes,
+        metric=metric,
+        label=f"{name} change, {month_label(first)} to {month_label(last)}",
     )
 
 
@@ -422,6 +449,8 @@ def compare_periods(
             "direction": _direction(change),
         },
         notes=notes + _partial_note(pa, ta) + _partial_note(pb, tb),
+        metric=metric,
+        label=f"{name} change, {pa.label} to {pb.label}",
     )
 
 
@@ -463,6 +492,8 @@ def extremes(
                 period=_month_key(key),
                 data={"months": len(months), "ties": [_month_key(k) for k in ties]},
                 notes=fact_notes,
+                metric=metric,
+                label=f"{name} {label} month ({month_label(key)})",
             )
         )
     return facts
@@ -515,8 +546,10 @@ def cross_metric_growth(
         value=None if faster is None else (pa - pb),
         unit="pp",
         period=period,
-        data={"a": ta.data, "b": tb.data, "faster": faster},
+        data={"a": ta.data, "b": tb.data, "faster": faster, "metrics": [metric_a, metric_b]},
         notes=notes,
+        metric=metric_a,
+        label=f"{name_a} vs {name_b} growth, {month_label(first)} to {month_label(last)}",
     )
 
 
@@ -567,6 +600,8 @@ def latest_summary(db: Session, company_id: int) -> list[Fact]:
                 period=_month_key(latest),
                 data=data,
                 notes=notes,
+                metric=m.metric_name,
+                label=f"{name}, latest ({month_label(latest)})",
             )
         )
     return facts

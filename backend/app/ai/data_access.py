@@ -7,6 +7,7 @@ facts.py decides how to handle them.
 
 from datetime import date
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.company import Company
@@ -50,3 +51,25 @@ def get_series(
 
     rows = query.order_by(KPI.metric_date, KPI.id).all()
     return [(d, float(v)) for d, v in rows]
+
+
+def latest_date(db: Session, company_id: int) -> date | None:
+    """Most recent KPI date for the company; relative periods are measured from it."""
+    return (
+        db.query(func.max(KPI.metric_date))
+        .filter(KPI.company_id == company_id)
+        .scalar()
+    )
+
+
+def earliest_date(db: Session, company_id: int) -> date | None:
+    return (
+        db.query(func.min(KPI.metric_date))
+        .filter(KPI.company_id == company_id)
+        .scalar()
+    )
+
+
+def list_companies(db: Session) -> list[tuple[int, str]]:
+    """[(id, name)] of all companies; used by the guard to spot other-company requests."""
+    return [(cid, name) for cid, name in db.query(Company.id, Company.name).order_by(Company.id)]

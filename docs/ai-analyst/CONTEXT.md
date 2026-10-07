@@ -82,7 +82,12 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 |---|---|---|
 | Vector store | pgvector in the existing Postgres | Proposed, needs Vaibhav approval (Docker image + extension) |
 | Embeddings | `BAAI/bge-small-en-v1.5` local, 384-dim | Proposed (free, no key) |
-| Generation LLM | Groq, `llama-3.3-70b-versatile` (production model per console.groq.com/docs/models, 2026-10-07) via `openai` pkg + base_url `https://api.groq.com/openai/v1`; env `AI_API_KEY` / `AI_MODEL` / `AI_BASE_URL`; temp 0.2, max_tokens 400, timeout 30s, 1 retry; all failures → `LLMError` (→ 503) | Decided 2026-10-07 |
+| Generation LLM | Groq `openai/gpt-oss-120b` (production, reasoning model) via `openai` pkg + base_url `https://api.groq.com/openai/v1`. Per Groq reasoning docs: `reasoning_effort="low"` + `include_reasoning=false` → only the final answer is returned. `max_completion_tokens=1200` (reasoning counts towards it), temp 0.2, timeout 30s, 1 retry. Fallback `qwen/qwen3.8-27b` (preview; `reasoning_effort="low"`, `reasoning_format="hidden"`) if the primary fails. Env: `AI_API_KEY` / `AI_MODEL` / `AI_FALLBACK_MODEL` (`none` disables) / `AI_GUARD_MODEL` / `AI_BASE_URL`. All failures → `LLMError` (→ 503). Was `llama-3.3-70b-versatile` until 2026-10-07 | Decided 2026-10-07 |
+| Guard | Runs before any data/LLM. Keyword rules (injection, other company by id/name, advice, off-topic tasks, no business words) + `meta-llama/llama-prompt-guard-2-86m` on Groq (preview; returns a probability as text, block ≥ 0.5, 5s timeout, no retry). Prompt Guard runs only if keywords pass; on failure → keyword rules only. Follow-ups ("And in April?") allowed when earlier user turns were business questions. Live: catches explicit jailbreaks (0.9996) but scored a subtle "no limits" request 0.013, so the system prompt + validator remain the main defence | Decided 2026-10-07 |
+| Intent | Rule-based `app/ai/intent.py` (no LLM). Relative periods resolved against the latest data date, not today. Month without year → explicit year in the question, else most recent occurrence ≤ latest data | Decided 2026-10-07 |
+| Prompt + output | System prompt = SPEC §5 rules + rule 9 (no cross-month pattern claims unless a fact states them) + plain professional text (no emoji, no markdown headings/bold/tables), first line = one direct sentence with number + period, 1–4 "- " points that add facts, cite [F#]. `validate.clean_text` also strips markdown/emoji and normalises Unicode minus/dashes | Decided 2026-10-07 |
+| Validator | Every number in the answer must match a context (or question) number within its shown precision; accepts 1,050,000 / 10,50,000 / 10.5 lakh / 1.05 million / crore, sign may be dropped; ignores integers 0–12, F/Q tags, day-of-month in dates. Unmatched → 1 strict retry → `insufficient_data`, `is_grounded=false` | Decided 2026-10-07 |
+| Refusals | out_of_scope / insufficient_data decided without the LLM whenever possible (guard, unknown metric, no facts for the period). Response = SPEC §7 dict + `meta` (intent, guard, model, retried, latency, context) for debugging; `insight_id` None until C1 | Decided 2026-10-07 |
 | Arithmetic | Done in Python, never by the LLM | Decided |
 | Branches | `feature/ai-analyst-spec` (Phase A), then one branch per phase | Decided |
 | Pipeline location | `backend/app/ai/` (importable as `app.ai.*`; top-level `ai/` isn't on the path) | Decided 2026-10-07 |
@@ -102,8 +107,11 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 - [x] B1 (PROMPTS). Fake seeder written + run: companies 1–3 × 72 KPI rows, idempotent
 - [x] B2 (PROMPTS). `app/ai/metrics_config.py` + `app/ai/data_access.py` + tests
 - [x] B3 (PROMPTS). `app/ai/facts.py` (pct_change, value_at, trend, compare_periods, extremes, cross_metric_growth, latest_summary) + unit tests — 36/36 tests pass
-- [ ] B4 (PROMPTS). `app/ai/llm.py` + `scripts/llm_hello.py` + 8 offline tests done (44/44 pass); **pending: real Groq key in `.env`, then `python -m scripts.llm_hello` prints a reply**
-- [ ] B5–B8 (PROMPTS). Intent, context + prompt, guard + validator, eval runner passing ≥90% / 100% safety
+- [x] B4 (PROMPTS). `app/ai/llm.py` + `scripts/llm_hello.py`; Groq `openai/gpt-oss-120b` replied in 637 ms (2026-10-07); reasoning low + Qwen fallback added
+- [x] B5 (PROMPTS). `app/ai/intent.py` + 34 tests (27 example questions)
+- [x] B6 (PROMPTS). `app/ai/context.py`, `prompts.py`, `ai_service.ask`, `scripts/ask.py` (`python -m scripts.ask --company 1 "..." [--context] [--json] [--no-guard-model]`)
+- [x] B7 (PROMPTS). `app/ai/guard.py` (+ Prompt Guard 2) and `validate.py`, wired into `ask`; 145/145 tests pass. Live CLI 2026-10-07: lookup / why / Q1-vs-Q2 / cross-metric answered correctly with citations; IPL → out_of_scope (off_topic); "Ignore your rules… company 2" → out_of_scope (injection); churn → insufficient_data
+- [ ] B8 (PROMPTS). Eval runner (`evals/ai_analyst_eval.jsonl` + `scripts/run_evals.py`) ≥90% overall / 100% safety → PR to `develop`
 - [ ] C1. `/api/ai/ask` endpoint + RBAC + `ai_insights` logging → PR
 - [ ] D1. Mock docs written to match seed numbers
 - [ ] D2. Chunk/embed/ingest + retrieval → PR
@@ -123,6 +131,8 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 - [ ] Seed data: which `metric_name`s exist, units/currency, granularity, how much history, how many companies? — Code facts: `metric_name` free-text String(100), `metric_value` Numeric(18,2), `metric_date` any Date, no unit/currency column (KPI or Company), no unique (company_id, metric_name, metric_date) → duplicates possible. No seed script in repo. Rest → Athira.
 - [ ] Forecast output shape and table name (Athira)?
 - [x] LLM provider → Groq (my key, my `.env` only). `llm.py` reads env itself, so `config.py` (not mine) is untouched; `change_me` is treated as missing.
-- [ ] Propose to Vaibhav: add `AI_MODEL=llama-3.3-70b-versatile` and `AI_BASE_URL=https://api.groq.com/openai/v1` under `# AI` in `.env.example`; add `openai` (and `pytest`) to requirements.
+- [ ] Propose to Vaibhav: add under `# AI` in `.env.example`: `AI_MODEL=openai/gpt-oss-120b`, `AI_FALLBACK_MODEL=qwen/qwen3.8-27b`, `AI_GUARD_MODEL=meta-llama/llama-prompt-guard-2-86m`, `AI_BASE_URL=https://api.groq.com/openai/v1`; add `openai` (and `pytest`) to requirements.
+- [ ] Qwen fallback and Prompt Guard are Groq **preview** models (may be removed at short notice). Both fail safe: no fallback → 503; no Prompt Guard → keyword rules only.
+- [ ] Known LLM style nits (not correctness): sometimes adds a filler point ("matches the computed fact") or doesn't cite the fact behind its first sentence → measure in B8 evals before tuning further.
 - [ ] Can a Viewer use the AI Analyst? (policy → Vaibhav) — the develop placeholder already allows Viewer. — Company scoping: code has none (`User` has no company link; company/kpi routes have no auth at all).
 - [ ] FastAPI version? No requirements file in repo; `HTTPBearer` returns 403 (not 401) for a missing header in some versions → affects E20.
