@@ -6,7 +6,7 @@ stable when the data is a few months old.
 
 Intents follow SPEC §2:
     lookup (I1) · summary (I2) · trend (I3) · compare (I4) · why (I5)
-    extremes (I6) · cross_metric (I7) · unknown_metric (I11) · off_topic (I12)
+    extremes (I6) · cross_metric (I7) · forecast (I8) · unknown_metric (I11) · off_topic (I12)
 Advice, injection and other-company requests are handled by guard.py.
 """
 
@@ -26,6 +26,7 @@ INTENT_CODES = {
     "why": "I5",
     "extremes": "I6",
     "cross_metric": "I7",
+    "forecast": "I8",
     "unknown_metric": "I11",
     "off_topic": "I12",
 }
@@ -78,12 +79,16 @@ _LAST_N_RE = re.compile(
     r"\b(?:last|past|previous)\s+(\d+|" + "|".join(NUMBER_WORDS) + r")\s+months?\b"
 )
 
+_FORECAST_RE = re.compile(
+    r"\b(forecasts?|forecasted|predict\w*|projections?|projected|outlook|"
+    r"next (?:month|quarter|year)|coming (?:months?|quarters?|year)|will (?:be|reach|grow|fall)|expected to)\b"
+)
 _WHY_RE = re.compile(r"\b(why|reason|reasons|cause|caused|causes|explain|what happened|what drove|driver|drivers)\b")
 _CROSS_RE = re.compile(r"\b(faster|slower|more than|less than|outpac\w*|relative to|ratio)\b")
 _COMPARE_RE = re.compile(r"\b(compare|compared|comparison|vs\.?|versus|against|difference between)\b")
 _EXTREME_RE = re.compile(r"\b(highest|lowest|best|worst|peak|maximum|minimum|max|min|most|least|biggest|smallest|record)\b")
 _TREND_RE = re.compile(
-    r"\b(trend|trends|trended|trending|over time|growing|grow|grew|growth|changed|"
+    r"\b(trend|trends|trended|trending|over time|growing|grow|grew|growth|change|changed|"
     r"evolve\w*|progress\w*|over the (?:last|past)|direction|improving|declining)\b"
 )
 
@@ -229,6 +234,8 @@ def detect_intent(
         return make("unknown_metric")
     if not metrics and not is_business_question(text):
         return make("off_topic")
+    if _FORECAST_RE.search(text):
+        return make("forecast")
 
     if metrics:
         if _WHY_RE.search(text):

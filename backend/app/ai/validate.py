@@ -44,6 +44,7 @@ def clean_text(text: str) -> str:
     text = re.sub(r"(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)", r"\1", text)
     text = re.sub(r"^\s*([-*_])\1{2,}\s*$", "", text, flags=re.MULTILINE)
     text = re.sub(r"^\s*[*•]\s+", "- ", text, flags=re.MULTILINE)
+    text = re.sub(r"([.!?])[ \t]+- (?=\S)", r"\1\n- ", text)  # "...INR. - It rose" -> new bullet line
     text = "\n".join(line.rstrip() for line in text.splitlines())
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()

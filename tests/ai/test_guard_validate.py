@@ -149,5 +149,10 @@ def test_clean_text_removes_markdown_and_emoji():
     assert clean_text(raw) == "Summary\nRevenue fell  by -36.5%\n- point one\n\n- point two"
 
 
+def test_clean_text_moves_inline_bullet_to_new_line():
+    assert clean_text("Revenue was 10 INR. - It rose 5% [F2].") == "Revenue was 10 INR.\n- It rose 5% [F2]."
+    assert clean_text("Profit was -5 INR.") == "Profit was -5 INR."
+
+
 def test_clean_text_dash_as_minus():
     assert clean_text("changed by –49,41,292 INR (Jan–Mar)") == "changed by -49,41,292 INR (Jan–Mar)"

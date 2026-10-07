@@ -30,6 +30,10 @@ def keys(periods):
         # I3 trend
         ("How has revenue trended over the last 6 months?", "trend", ["revenue"], []),
         ("Is net profit growing?", "trend", ["profit"], []),
+        ("How did profit change during 2024?", "trend", ["profit"], ["2024"]),
+        # I8 forecast (insufficient_data until Phase E)
+        ("What is next quarter's revenue forecast?", "forecast", ["revenue"], []),
+        ("Predict profit for next year", "forecast", ["profit"], []),
         # I4 compare
         ("Compare Q1 and Q2 2025 profit", "compare", ["profit"], ["2025-Q1", "2025-Q2"]),
         ("March vs February 2025 revenue", "compare", ["revenue"], ["2025-03", "2025-02"]),

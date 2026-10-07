@@ -239,7 +239,8 @@ def ask(
                       "window": [p.key for p in intent.window] if intent.window else None}
     if intent.intent == "off_topic":
         return refuse_scope()
-    if intent.intent == "unknown_metric" or not available:
+    if intent.intent in ("unknown_metric", "forecast") or not available:
+        # forecast: no forecast data in the context until Phase E
         return refuse_data()
     if intent.intent != "summary":
         intent.metrics = [m for m in intent.metrics if m in available]

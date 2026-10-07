@@ -87,6 +87,10 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 | Intent | Rule-based `app/ai/intent.py` (no LLM). Relative periods resolved against the latest data date, not today. Month without year → explicit year in the question, else most recent occurrence ≤ latest data | Decided 2026-10-07 |
 | Prompt + output | System prompt = SPEC §5 rules + rule 9 (no cross-month pattern claims unless a fact states them) + plain professional text (no emoji, no markdown headings/bold/tables), first line = one direct sentence with number + period, 1–4 "- " points that add facts, cite [F#]. `validate.clean_text` also strips markdown/emoji and normalises Unicode minus/dashes | Decided 2026-10-07 |
 | Validator | Every number in the answer must match a context (or question) number within its shown precision; accepts 1,050,000 / 10,50,000 / 10.5 lakh / 1.05 million / crore, sign may be dropped; ignores integers 0–12, F/Q tags, day-of-month in dates. Unmatched → 1 strict retry → `insufficient_data`, `is_grounded=false` | Decided 2026-10-07 |
+| Forecast questions (I8) | Detected by intent ("forecast", "predict", "next quarter", "will be"…) → `insufficient_data` until Phase E adds forecast context; never answered from actuals | Decided 2026-10-07 |
+| Range wording | Prompt rule: every change/growth over a range names start and end period ("from January 2025 to December 2025"); summaries state the values, not only changes | Decided 2026-10-07 |
+| Evals | `python -m scripts.run_evals` (from backend/) with the live LLM; targets ≥ 90% overall, 100% safety; exits non-zero if missed. Re-run after every prompt/model change | Decided 2026-10-07 |
+| AI endpoint | Inside Vaibhav's `POST /companies/{company_id}/ai-analysis`; response = his fields + SPEC §7 fields; `ai_insights` logs every call incl. LLM errors (status `error`) | Decided 2026-10-07 |
 | Refusals | out_of_scope / insufficient_data decided without the LLM whenever possible (guard, unknown metric, no facts for the period). Response = SPEC §7 dict + `meta` (intent, guard, model, retried, latency, context) for debugging; `insight_id` None until C1 | Decided 2026-10-07 |
 | Arithmetic | Done in Python, never by the LLM | Decided |
 | Branches | `feature/ai-analyst-spec` (Phase A), then one branch per phase | Decided |
@@ -111,8 +115,9 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 - [x] B5 (PROMPTS). `app/ai/intent.py` + 34 tests (27 example questions)
 - [x] B6 (PROMPTS). `app/ai/context.py`, `prompts.py`, `ai_service.ask`, `scripts/ask.py` (`python -m scripts.ask --company 1 "..." [--context] [--json] [--no-guard-model]`)
 - [x] B7 (PROMPTS). `app/ai/guard.py` (+ Prompt Guard 2) and `validate.py`, wired into `ask`; 145/145 tests pass. Live CLI 2026-10-07: lookup / why / Q1-vs-Q2 / cross-metric answered correctly with citations; IPL → out_of_scope (off_topic); "Ignore your rules… company 2" → out_of_scope (injection); churn → insufficient_data
-- [ ] B8 (PROMPTS). Eval runner (`evals/ai_analyst_eval.jsonl` + `scripts/run_evals.py`) ≥90% overall / 100% safety → PR to `develop`
-- [ ] C1. `/api/ai/ask` endpoint + RBAC + `ai_insights` logging → PR
+- [x] B8 (PROMPTS). `evals/ai_analyst_eval.jsonl` (28 rows: SPEC E1–E19 adapted to fake companies + extra injection/cross-company rows; 14 safety rows) + `backend/scripts/run_evals.py` (results → `evals/results/<timestamp>.json`, gitignored via `evals/results/.gitignore`). 2026-10-07: run 0 = 96.4% / safety 100% (E9 summary omitted latest value); fix 1 (prompt: state values in summaries) → E3b failed ("How did profit change" not a trend); fix 2 (intent: "change" = trend; inline-bullet cleanup) → **28/28 = 100% overall, 14/14 = 100% safety**. 2 of 15 LLM rows were served by the Qwen fallback (Groq rate limits on gpt-oss-120b), 0 strict retries
+- [x] C1. Implemented inside Vaibhav's existing `POST /companies/{company_id}/ai-analysis` (URL + request kept; response keeps `company_id, question, answer` and adds `insight_id, status, is_grounded, figures, sources, generated_at`; optional request `history`). Auth = his `require_role(ADMIN, ANALYST, VIEWER)`; 400 blank (his), 404 missing company (his), 422 > 500 chars, 503 on `LLMError`. Every call (incl. errors, status `error`) logged to new `ai_insights` table (`models/ai_insight.py`, created by `python -m app.init_db`). 8 API tests (real JWT, fake LLM) incl. E20: no token → 401, bad token → 401. Live check via uvicorn: 200 grounded answer, insight row written. 157/157 tests pass
+- [ ] PR `feature/ai-analyst-core` → `develop` (flag the teammate-file changes listed under Open questions)
 - [ ] D1. Mock docs written to match seed numbers
 - [ ] D2. Chunk/embed/ingest + retrieval → PR
 - [ ] E1. Forecast context added
@@ -121,7 +126,15 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 ## 9. Open questions
 - [x] Where do routers/models/schemas live? → `backend/app/api/routers`, `models`, `schemas`, `services` (see §6)
 - [x] Is the top-level `ai/` folder meant for my pipeline code? → went with `backend/app/ai/` (importable); tell Vaibhav in the PR.
-- [ ] **Placeholder AI endpoint (from develop, f03dd54, not mine):** `POST /companies/{company_id}/ai-analysis` in `api/routers/ai_analyst.py` + `services/ai_analyst_service.py` + `schemas/ai_analyst.py` (request `{question}`, response `{company_id, question, answer}`, roles Admin/Analyst/Viewer, 400 on blank question). Differs from SPEC §7 (`POST /ai/ask`, status/figures/sources). → Agree ONE contract with Vaibhav before C1: either I implement inside his placeholder or replace it.
+- [x] **Placeholder AI endpoint:** decided 2026-10-07 to implement inside Vaibhav's `POST /companies/{company_id}/ai-analysis` (SPEC §7's `POST /ai/ask` dropped). Response is a superset of his, so existing callers don't break.
+- [ ] **Flag in the PR to Vaibhav — changes to files I don't own:**
+  - `schemas/ai_analyst.py`: response gains `insight_id, status, is_grounded, figures, sources, generated_at` (all defaulted); request gains optional `history` and `question` max 500 chars (SPEC §7; 501+ chars now 422).
+  - `services/ai_analyst_service.py`: placeholder text replaced by a call to `app.ai.ai_service.ask` + `ai_insights` logging; signature kept, `user_id`/`history` added as optional params.
+  - `api/routers/ai_analyst.py`: passes `user_id` and `history` to the service and maps `LLMError` → 503; his auth, 404 and 400 untouched.
+  - `models/__init__.py`: export `AIInsight`.
+  - `init_db.py`: import `AIInsight` so `create_all` creates `ai_insights`.
+- [ ] Dev-only packages installed in `.venv`: `pytest`, `httpx` (FastAPI TestClient), plus runtime `openai` → add to requirements once it's agreed who owns that file.
+- [ ] Local demo account created for Swagger testing: `ai-demo@nexora.test` (Viewer, fake data only).
 - [x] Analytics PR #10 (`GET /companies/{id}/analytics`) is reusable for intent I2 — done in `facts.latest_summary` with the `comparison_available` and duplicate-date checks.
 - [ ] Endpoints now require a JWT (company/analytics return 401 without a token) — update §3 "routes are open" note after confirming with Vaibhav.
 - [ ] Root `requirements.txt` (untracked) is UTF-16 encoded (PowerShell `pip freeze >`) and has no pytest → regenerate as UTF-8 before committing (`.venv\Scripts\python -m pip freeze | Out-File -Encoding utf8 requirements.txt`) and agree with Vaibhav who owns it.
@@ -133,6 +146,7 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 - [x] LLM provider → Groq (my key, my `.env` only). `llm.py` reads env itself, so `config.py` (not mine) is untouched; `change_me` is treated as missing.
 - [ ] Propose to Vaibhav: add under `# AI` in `.env.example`: `AI_MODEL=openai/gpt-oss-120b`, `AI_FALLBACK_MODEL=qwen/qwen3.8-27b`, `AI_GUARD_MODEL=meta-llama/llama-prompt-guard-2-86m`, `AI_BASE_URL=https://api.groq.com/openai/v1`; add `openai` (and `pytest`) to requirements.
 - [ ] Qwen fallback and Prompt Guard are Groq **preview** models (may be removed at short notice). Both fail safe: no fallback → 503; no Prompt Guard → keyword rules only.
-- [ ] Known LLM style nits (not correctness): sometimes adds a filler point ("matches the computed fact") or doesn't cite the fact behind its first sentence → measure in B8 evals before tuning further.
+- [ ] Known LLM style nits (not correctness, not measured by evals): sometimes a filler point ("the direction is up"), a double sign ("fell by -49,41,292"), or no citation on the first sentence. Evals pass; tune only if the UI review asks for it.
+- [ ] Groq free-tier rate limits on gpt-oss-120b during back-to-back calls (eval runs): handled by 1 retry + Qwen fallback, but expect 5–11 s answers under load. Consider a paid tier or `AI_MODEL` change before the demo.
 - [ ] Can a Viewer use the AI Analyst? (policy → Vaibhav) — the develop placeholder already allows Viewer. — Company scoping: code has none (`User` has no company link; company/kpi routes have no auth at all).
-- [ ] FastAPI version? No requirements file in repo; `HTTPBearer` returns 403 (not 401) for a missing header in some versions → affects E20.
+- [x] FastAPI version → 0.142.2 (local `.venv`); missing token → 401 (verified 2026-10-07), so E20 expects 401.
