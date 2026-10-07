@@ -1,13 +1,8 @@
 from datetime import date
-
-from sqlalchemy import Date, ForeignKey, Numeric, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.database import Base
-from datetime import date
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, ForeignKey, Numeric, String
+from sqlalchemy import CheckConstraint, Date, ForeignKey, Index, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -17,11 +12,19 @@ if TYPE_CHECKING:
 
 class KPI(Base):
     __tablename__ = "kpis"
+    __table_args__ = (
+        CheckConstraint("length(trim(metric_name)) > 0", name="ck_kpis_metric_name_nonempty"),
+        CheckConstraint(
+            "metric_value > -100000000000000000 AND metric_value < 100000000000000000",
+            name="ck_kpis_metric_value_finite",
+        ),
+        Index("ix_kpis_company_metric_date", "company_id", "metric_name", "metric_date"),
+    )
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
 
     company_id: Mapped[int] = mapped_column(
-        ForeignKey("companies.id"),
+        ForeignKey("companies.id", ondelete="RESTRICT"),
         nullable=False,
     )
 
@@ -30,7 +33,7 @@ class KPI(Base):
         nullable=False,
     )
 
-    metric_value: Mapped[float] = mapped_column(
+    metric_value: Mapped[Decimal] = mapped_column(
         Numeric(18, 2),
         nullable=False,
     )

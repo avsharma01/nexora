@@ -12,10 +12,10 @@ PyJWT==2.15.1
 pwdlib[argon2]==0.3.1
 
 # --- AI Business Analyst ---
-openai==3.26.0        # OpenAI-compatible client for Groq (app/ai/llm.py)
-fastembed==0.8.1      # local BAAI/bge-small-en-v1.5 embeddings (ONNX, no API key)
-pgvector==0.5.0       # SQLAlchemy Vector type for ai_document_chunks
+openai==3.26.0
+fastembed==0.8.1
+pgvector==0.5.0
 
 # --- tests ---
 pytest==9.1.1
-httpx==0.28.1         # needed by fastapi.testclient
+httpx==0.28.1
