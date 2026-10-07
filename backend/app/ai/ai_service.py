@@ -1,7 +1,7 @@
 """AI Business Analyst pipeline: ask(db, company_id, question, history) -> SPEC §7 dict.
 
-    question -> guard -> intent -> facts (Python maths) -> context -> LLM
-             -> clean + validate numbers (one strict retry) -> response
+    question -> guard -> intent -> facts (Python maths) + document excerpts (pgvector)
+             -> context -> LLM -> clean + validate numbers (one strict retry) -> response
 
 Refusals (out_of_scope / insufficient_data) that can be decided without the LLM
 never call it. Raises CompanyNotFoundError (-> 404) and llm.LLMError (-> 503).
@@ -11,10 +11,13 @@ import re
 import time
 from datetime import date, datetime, timezone
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.ai import data_access, guard, llm
-from app.ai.context import Context, build_context, figures_for, source_for
+from app.ai import data_access, guard, llm, retrieval
+from app.ai.context import Context, build_context, figures_for, source_for, source_for_excerpt
+from app.ai.embeddings import EmbeddingError
+from app.ai.retrieval import Excerpt
 from app.ai.facts import (
     Fact,
     Period,
@@ -128,7 +131,16 @@ def plan(
             facts.append(trend(series[m], *window, metric=m))
             rows[m] = _rows_between(series[m], *window)
 
-    elif intent.intent in ("compare", "why"):
+    elif intent.intent in ("why", "document") and not intent.periods:
+        # "Why is profit shrinking?" / "What did the board say about revenue?":
+        # the trend over the default window, for the asked metric(s) and (for why) the others.
+        window = _window(intent, latest, DEFAULT_WINDOW_MONTHS)
+        targets = metrics if intent.intent == "document" else metrics + [m for m in available if m not in metrics]
+        for m in targets:
+            facts.append(trend(series[m], *window, metric=m))
+            rows[m] = _rows_between(series[m], *window)
+
+    elif intent.intent in ("compare", "why", "document"):
         periods = sorted(intent.periods, key=lambda p: p.start)
         if len(periods) >= 2:
             a, b = periods[0], periods[-1]
@@ -136,7 +148,7 @@ def plan(
             b = periods[0] if periods else _month(latest)
             a = previous_period(b)
         # "why" also looks at the other metrics over the same two periods.
-        targets = metrics if intent.intent == "compare" else metrics + [m for m in available if m not in metrics]
+        targets = metrics + [m for m in available if m not in metrics] if intent.intent == "why" else metrics
         for m in targets:
             facts.append(compare_periods(series[m], a, b, metric=m))
             rows[m] = _rows_between(series[m], Period("month", *a.months[0]), Period("month", *b.months[-1]))
@@ -156,6 +168,25 @@ def plan(
             rows[m] = _rows_between(series[m], *window)
 
     return [f for f in facts if f is not None], rows
+
+
+RAG_INTENTS = ("why", "document", "summary")
+
+
+def _retrieve(db: Session, company_id: int, question: str, intent: Intent, meta: dict) -> list[Excerpt]:
+    """Document excerpts for this company. Any failure -> no excerpts (facts still work)."""
+    if intent.intent not in RAG_INTENTS:
+        return []
+    # Add the metric and period names so "why" questions match the right section.
+    query = " ".join([question, *(display_name(m) for m in intent.metrics), *(p.label for p in intent.periods)])
+    try:
+        excerpts = retrieval.search(db, company_id, query)
+    except (EmbeddingError, SQLAlchemyError) as exc:
+        db.rollback()
+        meta["retrieval_error"] = f"{type(exc).__name__}: {exc}"[:500]
+        return []
+    meta["retrieval"] = [{"label": e.label, "similarity": round(e.similarity, 3)} for e in excerpts]
+    return excerpts
 
 
 # --------------------------------------------------------------------------- #
@@ -242,19 +273,24 @@ def ask(
     if intent.intent in ("unknown_metric", "forecast") or not available:
         # forecast: no forecast data in the context until Phase E
         return refuse_data()
-    if intent.intent != "summary":
+    if intent.intent not in ("summary", "document"):
         intent.metrics = [m for m in intent.metrics if m in available]
         if not intent.metrics or (intent.intent == "cross_metric" and len(intent.metrics) < 2):
             return refuse_data()
+    else:
+        intent.metrics = [m for m in intent.metrics if m in available]
 
     # 3. Facts (all maths in Python)
     facts, rows = plan(db, company_id, intent, latest, available)
-    if not facts:
+
+    # 4. Document excerpts (why / document / summary questions only)
+    excerpts = _retrieve(db, company_id, question, intent, meta)
+    if not facts and not excerpts:
         return refuse_data()
 
-    # 4. Context + LLM
+    # 5. Context + LLM
     context: Context = build_context(
-        company.name, company.id, company.industry, available, (first, latest), rows, facts
+        company.name, company.id, company.industry, available, (first, latest), rows, facts, excerpts
     )
     messages = [
         {"role": "system", "content": system_prompt(company.name, available_text, example)},
@@ -266,7 +302,7 @@ def ask(
     bad = ungrounded_numbers(answer, context.text, question)
     meta.update(model=reply.model, retried=False)
 
-    # 5. Validate: one strict retry, then give up with insufficient_data
+    # 6. Validate: one strict retry, then give up with insufficient_data
     if bad:
         meta.update(retried=True, first_unmatched=bad)
         retry = messages + [
@@ -289,12 +325,17 @@ def ask(
     if status != "answered":
         return done(status, answer)
 
-    cited = [tag for tag in dict.fromkeys(_CITATION_RE.findall(answer)) if tag in context.facts]
-    used = cited or list(context.facts)
+    known = {**context.facts, **context.excerpts}
+    cited = [tag for tag in dict.fromkeys(_CITATION_RE.findall(answer)) if tag in known]
+    used = cited or list(known)
     meta["context"] = context.text
     return done(
         "answered",
         answer,
-        figures=[fig for tag in used for fig in figures_for(context.facts[tag])],
-        sources=[source_for(tag, context.facts[tag]) for tag in used],
+        figures=[fig for tag in used if tag in context.facts for fig in figures_for(context.facts[tag])],
+        sources=[
+            source_for(tag, context.facts[tag]) if tag in context.facts
+            else source_for_excerpt(tag, context.excerpts[tag])
+            for tag in used
+        ],
     )

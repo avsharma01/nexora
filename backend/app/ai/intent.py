@@ -6,7 +6,8 @@ stable when the data is a few months old.
 
 Intents follow SPEC §2:
     lookup (I1) · summary (I2) · trend (I3) · compare (I4) · why (I5)
-    extremes (I6) · cross_metric (I7) · forecast (I8) · unknown_metric (I11) · off_topic (I12)
+    extremes (I6) · cross_metric (I7) · forecast (I8) · document (I10)
+    unknown_metric (I11) · off_topic (I12)
 Advice, injection and other-company requests are handled by guard.py.
 """
 
@@ -27,6 +28,7 @@ INTENT_CODES = {
     "extremes": "I6",
     "cross_metric": "I7",
     "forecast": "I8",
+    "document": "I10",
     "unknown_metric": "I11",
     "off_topic": "I12",
 }
@@ -48,6 +50,13 @@ UNAVAILABLE_TERMS = [
     "debt", "loan", "inventory", "stock level", "market share", "nps", "retention",
     "users", "subscribers", "orders", "footfall", "share price", "stock price",
     "valuation", "dividend", "tax", "salary", "salaries", "budget",
+]
+
+# Questions answered from company documents (board memos, risk commentary, ...).
+DOCUMENT_TERMS = [
+    "risk", "risks", "board", "memo", "memos", "document", "documents", "commentary",
+    "narrative", "assumption", "assumptions", "decision", "decisions", "decide", "decided",
+    "strategy", "management say", "management said", "according to",
 ]
 
 # Outside knowledge we don't have, even when a known metric is mentioned.
@@ -118,6 +127,7 @@ def is_business_question(text: str) -> bool:
         or _has_any(text, BUSINESS_WORDS)
         or _has_any(text, UNAVAILABLE_TERMS)
         or _has_any(text, OUTSIDE_DATA_TERMS)
+        or _has_any(text, DOCUMENT_TERMS)
     )
 
 
@@ -230,6 +240,10 @@ def detect_intent(
 
     if outside:
         return make("unknown_metric")
+    # Document questions ("What risks did the board mention?"); a "why" about a
+    # metric stays "why" (it also gets document excerpts).
+    if _has_any(text, DOCUMENT_TERMS) and not (metrics and _WHY_RE.search(text)):
+        return make("document")
     if unknown and not metrics:
         return make("unknown_metric")
     if not metrics and not is_business_question(text):

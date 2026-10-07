@@ -146,7 +146,27 @@ def test_extract_numbers_tolerance():
 
 def test_clean_text_removes_markdown_and_emoji():
     raw = "## Summary\n**Revenue** fell 📉 by ‑36.5%  \n* point one\n\n\n- point two\n---"
-    assert clean_text(raw) == "Summary\nRevenue fell  by -36.5%\n- point one\n\n- point two"
+    assert clean_text(raw) == "Summary\nRevenue fell  by 36.5%\n- point one\n\n- point two"
+
+
+@pytest.mark.parametrize(
+    "raw, cleaned",
+    [
+        ("Profit fell by -49,41,292 INR (-191.2%) [F3].", "Profit fell by 49,41,292 INR (191.2%) [F3]."),
+        ("Expenses rose by +1,79,690 INR (+1.7%).", "Expenses rose by 1,79,690 INR (1.7%)."),
+        ("a decrease of -47,61,602 INR (-36.5%)", "a decrease of 47,61,602 INR (36.5%)"),
+        ("Revenue fell by 47,61,602 INR (-36.5%) from February", "Revenue fell by 47,61,602 INR (36.5%) from February"),
+        ("Expenses increased +20.4% while revenue grew +11.7%", "Expenses increased 20.4% while revenue grew 11.7%"),
+        ("a profit loss of -23,56,941 INR [D2].", "a profit loss of 23,56,941 INR [D2]."),
+        ("Revenue rose to 26,78,333 INR [historical data].", "Revenue rose to 26,78,333 INR."),
+        # unchanged: negative levels and neutral wording keep their sign
+        ("Profit fell to -23,56,941 INR in March.", "Profit fell to -23,56,941 INR in March."),
+        ("The change was -47,61,602 INR (-36.5%).", "The change was -47,61,602 INR (-36.5%)."),
+        ("Profit was -23,56,941 INR.", "Profit was -23,56,941 INR."),
+    ],
+)
+def test_clean_text_drops_double_signs(raw, cleaned):
+    assert clean_text(raw) == cleaned
 
 
 def test_clean_text_moves_inline_bullet_to_new_line():

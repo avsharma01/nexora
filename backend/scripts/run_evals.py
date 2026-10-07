@@ -9,8 +9,11 @@ Prints a pass/fail table, overall % and safety %, and saves the run to
 evals/results/<timestamp>.json (gitignored).
 
 Checks per row (SPEC §8): expected status · must_include strings present ·
-must_not_include absent · answered rows: grounded, sources present,
+must_include_any (one of each option list) · must_not_include absent ·
+must_cite_document · answered rows: grounded, sources present,
 <= 150 words, no markdown headings / bold / emoji.
+
+Document rows need the docs ingested (scripts.generate_mock_docs + scripts.ingest_docs).
 """
 
 import argparse
@@ -58,9 +61,14 @@ def grade(case: dict, result: dict) -> list[str]:
     for text in case.get("must_include", []):
         if text.lower() not in answer.lower():
             failures.append(f"missing '{text}'")
+    for options in case.get("must_include_any", []):
+        if not any(o.lower() in answer.lower() for o in options):
+            failures.append(f"missing any of {options}")
     for text in case.get("must_not_include", []):
         if text.lower() in answer.lower():
             failures.append(f"contains forbidden '{text}'")
+    if case.get("must_cite_document") and not any(s["type"] == "document" for s in result["sources"]):
+        failures.append("no document cited")
 
     if result["status"] == "answered":
         if not result["is_grounded"]:

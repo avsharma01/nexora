@@ -33,11 +33,45 @@ _EMOJI_RE = re.compile(
 SMALL_INT_LIMIT = 12
 
 
+_DIRECTION_WORDS = (
+    r"fell|fall|falls|falling|dropped|drop|drops|decreased|decrease|decreases|declined|decline|declines|"
+    r"down|lower|reduction|rose|rise|rises|rising|increased|increase|increases|grew|grow|grows|growth|"
+    r"up|higher|gain|gained|gains|improved|improvement|loss|losses"
+)
+# Pseudo-citations the model sometimes invents instead of F/D tags.
+_FAKE_CITATION_RE = re.compile(
+    r"\s*\[(?:historical data|computed facts?|context|document excerpts?|data)\]", re.IGNORECASE
+)
+# "fell by -49,41,292 INR (-191.2%)" -> "fell by 49,41,292 INR (191.2%)". Not after "to"
+# ("fell to -23,56,941 INR" is a negative level and keeps its sign).
+_DOUBLE_SIGN_RE = re.compile(
+    rf"\b(?P<verb>{_DIRECTION_WORDS})(?P<gap>\s+(?:by|of)\s+|\s+)(?:an?\s+)?[+\-]\s?(?P<num>\d[\d,]*(?:\.\d+)?)"
+    r"(?P<tail>\s*(?:INR|%|lakh|crore|million)?)(?:\s*\(\s*[+\-]\s?(?P<pct>\d[\d,]*(?:\.\d+)?%)\s*\))?",
+    re.IGNORECASE,
+)
+_PCT_AFTER_DIRECTION_RE = re.compile(
+    rf"\b(?P<head>(?:{_DIRECTION_WORDS})(?:\s+(?:by|of))?\s+\d[\d,]*(?:\.\d+)?\s*(?:INR|lakh|crore|million)?)"
+    r"\s*\(\s*[+\-]\s?(?P<pct>\d[\d,]*(?:\.\d+)?%)\s*\)",
+    re.IGNORECASE,
+)
+
+
+def _drop_double_signs(text: str) -> str:
+    def fix(m: re.Match) -> str:
+        out = f"{m['verb']}{m['gap']}{m['num']}{m['tail']}"
+        return out + (f" ({m['pct']})" if m["pct"] else "")
+
+    text = _DOUBLE_SIGN_RE.sub(fix, text)
+    return _PCT_AFTER_DIRECTION_RE.sub(lambda m: f"{m['head']} ({m['pct']})", text)
+
+
 def clean_text(text: str) -> str:
     """Strip emoji, markdown headings, bold/italic markers and horizontal rules."""
     text = _EMOJI_RE.sub("", text)
     text = text.replace("‑", "-").replace("−", "-")  # non-breaking hyphen / minus sign
     text = re.sub(r"(?<![\w\d])[–—](?=\d)", "-", text)  # en/em dash used as minus
+    text = _drop_double_signs(text)
+    text = _FAKE_CITATION_RE.sub("", text)
     text = text.replace(" ", " ").replace(" ", " ")
     text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"\*\*(.+?)\*\*|__(.+?)__", lambda m: m.group(1) or m.group(2), text)
