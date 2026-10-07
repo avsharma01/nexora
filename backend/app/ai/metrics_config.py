@@ -1,10 +1,14 @@
 """The ONE place that knows metric names, units, display names and synonyms.
 
 The kpis table stores no unit/currency, so units live here. When the team's real
-seed data arrives, only this file should need to change.
+seed data arrives, only this file should need to change. A company's own currency
+(financial_records.currency, see data_access.company_currency) overrides the
+currency here while answering about that company.
 """
 
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 
 METRICS: dict[str, dict] = {
@@ -30,8 +34,31 @@ def display_name(metric: str) -> str:
     return METRICS.get(metric, {}).get("display", metric.replace("_", " ").title())
 
 
+def _is_currency(unit: str | None) -> bool:
+    return bool(unit) and len(unit) == 3 and unit.isalpha() and unit.isupper()
+
+
+# The company's own currency (e.g. "USD" from financial_records) overrides the
+# currency above for money metrics, for the duration of one question. A
+# ContextVar keeps concurrent requests for different companies apart.
+_company_currency: ContextVar[str | None] = ContextVar("company_currency", default=None)
+
+
+@contextmanager
+def company_currency(code: str | None):
+    token = _company_currency.set(code.strip().upper() if code else None)
+    try:
+        yield
+    finally:
+        _company_currency.reset(token)
+
+
 def unit_of(metric: str) -> str | None:
-    return METRICS.get(metric, {}).get("unit")
+    unit = METRICS.get(metric, {}).get("unit")
+    override = _company_currency.get()
+    if override and _is_currency(unit):
+        return override
+    return unit
 
 
 def resolve_metric(word: str) -> str | None:

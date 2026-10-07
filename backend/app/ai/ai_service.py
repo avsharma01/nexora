@@ -32,7 +32,7 @@ from app.ai.facts import (
     value_at,
 )
 from app.ai.intent import Intent, detect_intent
-from app.ai.metrics_config import display_name
+from app.ai.metrics_config import company_currency, display_name
 from app.ai.prompts import (
     STRICT_RETRY_NOTE,
     insufficient_answer,
@@ -221,6 +221,19 @@ def ask(
     history: list[dict] | None = None,
     *,
     use_guard_model: bool = True,
+) -> dict:
+    # Money is shown in the company's own currency when its financial records say so.
+    with company_currency(data_access.company_currency(db, company_id)):
+        return _ask(db, company_id, question, history, use_guard_model=use_guard_model)
+
+
+def _ask(
+    db: Session,
+    company_id: int,
+    question: str,
+    history: list[dict] | None,
+    *,
+    use_guard_model: bool,
 ) -> dict:
     started = time.perf_counter()
     company = data_access.get_company(db, company_id)

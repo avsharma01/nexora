@@ -7,7 +7,8 @@ facts.py decides how to handle them.
 
 from datetime import date
 
-from sqlalchemy import func
+from sqlalchemy import func, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.company import Company
@@ -68,6 +69,27 @@ def earliest_date(db: Session, company_id: int) -> date | None:
         .filter(KPI.company_id == company_id)
         .scalar()
     )
+
+
+def company_currency(db: Session, company_id: int) -> str | None:
+    """The company's currency from financial_records (Athira's table), or None.
+
+    None when the table does not exist yet (before her branch is merged) or the
+    company has no financial records (e.g. the fake AI test companies).
+    """
+    try:
+        if not db.execute(text("select to_regclass('financial_records') is not null")).scalar():
+            return None
+        return db.execute(
+            text(
+                "select currency from financial_records where company_id = :cid "
+                "order by record_date desc limit 1"
+            ),
+            {"cid": company_id},
+        ).scalar()
+    except SQLAlchemyError:
+        db.rollback()
+        return None
 
 
 def list_companies(db: Session) -> list[tuple[int, str]]:

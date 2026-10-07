@@ -90,3 +90,23 @@ def test_get_series_filtered_by_company_and_dates(db, fake_ids):
     )
     assert [d for d, _ in window] == [date(2025, 1, 31), date(2025, 2, 28), date(2025, 3, 31)]
     assert get_series(db, fake_ids["Test Retail Pvt Ltd"], "churn") == []
+
+
+# --- per-company currency ----------------------------------------------------- #
+
+def test_company_currency_overrides_money_units_only_inside_the_block():
+    from app.ai.metrics_config import company_currency
+
+    assert unit_of("revenue") == "INR"
+    with company_currency("usd"):
+        assert unit_of("revenue") == "USD"
+        assert unit_of("profit") == "USD"
+    assert unit_of("revenue") == "INR"
+    with company_currency(None):
+        assert unit_of("revenue") == "INR"
+
+
+def test_fake_companies_have_no_company_currency(db, fake_ids):
+    from app.ai.data_access import company_currency
+
+    assert company_currency(db, fake_ids["Test Retail Pvt Ltd"]) is None

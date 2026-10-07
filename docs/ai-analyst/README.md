@@ -88,9 +88,9 @@ Errors: 400 blank question · 401 no/invalid token · 404 company not found · 4
 
 ## Final results (2026-10-07, branch `feature/ai-analyst-core`)
 ```
-pytest: 192 passed in 5.14s
+pytest: 194 passed
   test_guard_validate 56 · test_intent 37 · test_facts 29 · test_rag 22 · test_ai_service 19
-  test_llm 13 · test_api_ai_analysis 8 · test_seed_and_data_access 8
+  test_llm 13 · test_seed_and_data_access 10 · test_api_ai_analysis 8
 
 evals (ai_analyst_eval.jsonl, live Groq):
   Overall: 35/35 = 100.0%  (target >= 90%)
@@ -103,8 +103,9 @@ evals (ai_analyst_eval.jsonl, live Groq):
   latency in a back-to-back run: median 7.9 s, max 16.2 s (Groq free-tier rate limits);
   refusals 5-140 ms; single questions in the CLI typically 1-3 s
 
-dry run of the real-data switch (Athira's seed formula, USD), real_data_smoke.jsonl:
-  Overall: 14/14 = 100.0%   Safety: 6/6 = 100.0%
+real-data run (Athira's seed_data.py, USD, loaded next to the fake companies), real_data_smoke.jsonl:
+  Overall: 14/14 = 100.0%   Safety: 6/6 = 100.0%   (main set in the same DB: 35/35, 16/16)
+  currency per company from financial_records: real answers in USD, fake ones in INR
 ```
 
 ## Known limitations
