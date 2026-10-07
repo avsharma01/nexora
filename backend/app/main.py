@@ -1,7 +1,14 @@
 from fastapi import FastAPI
 from sqlalchemy import text
 
-from app.api.routers import analytics, auth, company, kpi
+from app.api.routers import (
+    ai_analyst,
+    analytics,
+    auth,
+    company,
+    forecast,
+    kpi,
+)
 from app.database import engine
 
 app = FastAPI(
@@ -15,6 +22,8 @@ app.include_router(company.router)
 app.include_router(kpi.router)
 app.include_router(auth.router)
 app.include_router(analytics.router)
+app.include_router(forecast.router)
+app.include_router(ai_analyst.router)
 
 
 @app.get("/")
