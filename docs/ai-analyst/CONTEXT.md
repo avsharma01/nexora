@@ -82,9 +82,15 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 |---|---|---|
 | Vector store | pgvector in the existing Postgres | Proposed, needs Vaibhav approval (Docker image + extension) |
 | Embeddings | `BAAI/bge-small-en-v1.5` local, 384-dim | Proposed (free, no key) |
-| Generation LLM | TBD (provider-agnostic wrapper in `llm.py`) | **Open** — decide with team: budget/key |
+| Generation LLM | Groq, `llama-3.3-70b-versatile` (production model per console.groq.com/docs/models, 2026-10-07) via `openai` pkg + base_url `https://api.groq.com/openai/v1`; env `AI_API_KEY` / `AI_MODEL` / `AI_BASE_URL`; temp 0.2, max_tokens 400, timeout 30s, 1 retry; all failures → `LLMError` (→ 503) | Decided 2026-10-07 |
 | Arithmetic | Done in Python, never by the LLM | Decided |
 | Branches | `feature/ai-analyst-spec` (Phase A), then one branch per phase | Decided |
+| Pipeline location | `backend/app/ai/` (importable as `app.ai.*`; top-level `ai/` isn't on the path) | Decided 2026-10-07 |
+| Test data | Fake seeder `backend/scripts/seed_ai_test_data.py` → same `companies`/`kpis` tables via team models; 3 cos × 24 months (2024-01..2025-12, month-end) × revenue/expenses/profit; `--reset` deletes only fakes | Decided 2026-10-07 |
+| Metric names/units | Only in `app/ai/metrics_config.py` (all INR for now); swap to real names there only | Decided 2026-10-07 |
+| Facts rules | Monthly buckets; duplicate date → last stored row wins, several dates in a month → latest date wins (both add a data-quality note); quarter/year = SUM of months, partial periods flagged; % = (curr−prev)/abs(prev), None if prev=0 (same as analytics); round only in text (1-dp %, Indian grouping INR, ASCII "-") | Decided 2026-10-07 |
+| I2 summary | Reuse `analytics_service.get_company_analytics` (PR #10): `comparison_available=false` → latest only; `latest_date==previous_date` → no change + data-quality note | Decided 2026-10-07 |
+| Tests | `pytest.ini` at repo root (`pythonpath = backend`, cache off); `tests/ai/`; DB tests skip if Postgres down / fakes not seeded. Run: `.venv\Scripts\python -m pytest` | Decided 2026-10-07 |
 
 ## 8. Progress
 - [x] A0. Branch `feature/ai-analyst-spec` created from `develop`, `docs/ai-analyst/` committed, `CLAUDE.local.md` excluded via `.git/info/exclude` (verified 2026-10-06: b5cb595 on top of develop 88d038f, pushed)
@@ -92,9 +98,12 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 - [ ] A2. Messages sent to Vaibhav / Athira / Piyush / Arth
 - [ ] A3. SPEC.md finalized with real metric names + team feedback → PR to `develop`
 - [ ] A4. Mock response JSON shared with Piyush; eval checklist shared with Arth
-- [ ] B1. LLM provider chosen, key in `.env` (not committed)
-- [ ] B2. Facts layer (KPI fetch + calculations) with unit tests
-- [ ] B3. Prompt + guard + validator; eval set passing from a script
+- [x] Step 0. `origin/develop` merged into `feature/ai-analyst-core` (2026-10-07, no conflicts: forecast API, placeholder AI endpoint, analytics PR #10); uvicorn starts, `/docs` 200, `/health/db` ok
+- [x] B1 (PROMPTS). Fake seeder written + run: companies 1–3 × 72 KPI rows, idempotent
+- [x] B2 (PROMPTS). `app/ai/metrics_config.py` + `app/ai/data_access.py` + tests
+- [x] B3 (PROMPTS). `app/ai/facts.py` (pct_change, value_at, trend, compare_periods, extremes, cross_metric_growth, latest_summary) + unit tests — 36/36 tests pass
+- [ ] B4 (PROMPTS). `app/ai/llm.py` + `scripts/llm_hello.py` + 8 offline tests done (44/44 pass); **pending: real Groq key in `.env`, then `python -m scripts.llm_hello` prints a reply**
+- [ ] B5–B8 (PROMPTS). Intent, context + prompt, guard + validator, eval runner passing ≥90% / 100% safety
 - [ ] C1. `/api/ai/ask` endpoint + RBAC + `ai_insights` logging → PR
 - [ ] D1. Mock docs written to match seed numbers
 - [ ] D2. Chunk/embed/ingest + retrieval → PR
@@ -103,12 +112,17 @@ LLM key → add a placeholder to `.env.example`, real value only in `.env`.
 
 ## 9. Open questions
 - [x] Where do routers/models/schemas live? → `backend/app/api/routers`, `models`, `schemas`, `services` (see §6)
-- [ ] Is the top-level `ai/` folder meant for my pipeline code? (ask Vaibhav) — `ai/` is empty and backend imports are `app.*` from `backend/`, so top-level `ai/` isn't importable without path hacks → lean `backend/app/ai/`.
+- [x] Is the top-level `ai/` folder meant for my pipeline code? → went with `backend/app/ai/` (importable); tell Vaibhav in the PR.
+- [ ] **Placeholder AI endpoint (from develop, f03dd54, not mine):** `POST /companies/{company_id}/ai-analysis` in `api/routers/ai_analyst.py` + `services/ai_analyst_service.py` + `schemas/ai_analyst.py` (request `{question}`, response `{company_id, question, answer}`, roles Admin/Analyst/Viewer, 400 on blank question). Differs from SPEC §7 (`POST /ai/ask`, status/figures/sources). → Agree ONE contract with Vaibhav before C1: either I implement inside his placeholder or replace it.
+- [x] Analytics PR #10 (`GET /companies/{id}/analytics`) is reusable for intent I2 — done in `facts.latest_summary` with the `comparison_available` and duplicate-date checks.
+- [ ] Endpoints now require a JWT (company/analytics return 401 without a token) — update §3 "routes are open" note after confirming with Vaibhav.
+- [ ] Root `requirements.txt` (untracked) is UTF-16 encoded (PowerShell `pip freeze >`) and has no pytest → regenerate as UTF-8 before committing (`.venv\Scripts\python -m pip freeze | Out-File -Encoding utf8 requirements.txt`) and agree with Vaibhav who owns it.
 - [x] Router registration / init_db / tables → `app.include_router(x.router)` in main.py, no global prefix. `init_db.py` = `Base.metadata.create_all` (no Alembic), run manually (`python -m app.init_db`), creates missing tables only, never alters. Tables: `companies`, `kpis`, `users`. New models must be imported in `init_db.py` + `models/__init__.py`.
 - [x] Dependencies → `app.core.dependencies.get_current_user` returns `{"user_id": int, "role": "admin"|"analyst"|"viewer"}` (401 bad/expired token, unknown or inactive user). `require_role(*roles: UserRole)` factory: `Depends(require_role(UserRole.ADMIN, UserRole.ANALYST))` → same dict, 403 "Insufficient permissions". JWT HS256, `sub` = user id.
 - [x] API conventions → no `/api` prefix; routers set their own (`/auth`, `/companies`). Errors = FastAPI default `{"detail": "<msg>"}` (422: `{"detail": [{loc,msg,type}]}`). No envelope: return `response_model` directly. 201 create / 204 delete. Existence 404s live in the router. → mine: `POST /ai/ask`, `APIRouter(prefix="/ai", tags=["AI Analyst"])`.
 - [ ] Seed data: which `metric_name`s exist, units/currency, granularity, how much history, how many companies? — Code facts: `metric_name` free-text String(100), `metric_value` Numeric(18,2), `metric_date` any Date, no unit/currency column (KPI or Company), no unique (company_id, metric_name, metric_date) → duplicates possible. No seed script in repo. Rest → Athira.
 - [ ] Forecast output shape and table name (Athira)?
-- [ ] LLM provider + who holds the key? — `.env.example` already has `AI_API_KEY=change_me`; `config.py` doesn't read it yet (add to `Settings`).
-- [ ] Can a Viewer use the AI Analyst? (policy → Vaibhav) — Company scoping: code has none (`User` has no company link; company/kpi routes have no auth at all).
+- [x] LLM provider → Groq (my key, my `.env` only). `llm.py` reads env itself, so `config.py` (not mine) is untouched; `change_me` is treated as missing.
+- [ ] Propose to Vaibhav: add `AI_MODEL=llama-3.3-70b-versatile` and `AI_BASE_URL=https://api.groq.com/openai/v1` under `# AI` in `.env.example`; add `openai` (and `pytest`) to requirements.
+- [ ] Can a Viewer use the AI Analyst? (policy → Vaibhav) — the develop placeholder already allows Viewer. — Company scoping: code has none (`User` has no company link; company/kpi routes have no auth at all).
 - [ ] FastAPI version? No requirements file in repo; `HTTPBearer` returns 403 (not 401) for a missing header in some versions → affects E20.
