@@ -110,3 +110,25 @@ def test_fake_companies_have_no_company_currency(db, fake_ids):
     from app.ai.data_access import company_currency
 
     assert company_currency(db, fake_ids["Test Retail Pvt Ltd"]) is None
+
+
+def test_metric_names_are_case_insensitive(db):
+    """develop's seed_db.py writes "Revenue"/"Expenses"; the analyst must still find them."""
+    from app.models.company import Company
+    from app.models.kpi import KPI
+
+    company = Company(name="Case Test Co (temp)", industry="Test", description="temporary test row")
+    db.add(company)
+    db.flush()
+    db.add_all([
+        KPI(company_id=company.id, metric_name="Revenue", metric_value=42, metric_date=date(2025, 10, 1)),
+        KPI(company_id=company.id, metric_name=" Revenue ", metric_value=44, metric_date=date(2025, 11, 1)),
+        KPI(company_id=company.id, metric_name="Expenses", metric_value=36, metric_date=date(2025, 10, 1)),
+    ])
+    db.flush()
+    try:
+        assert available_metrics(db, company.id) == ["expenses", "revenue"]
+        assert get_series(db, company.id, "revenue") == [(date(2025, 10, 1), 42.0), (date(2025, 11, 1), 44.0)]
+        assert get_series(db, company.id, "Revenue") == get_series(db, company.id, "revenue")
+    finally:
+        db.rollback()

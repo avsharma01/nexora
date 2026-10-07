@@ -23,14 +23,16 @@ def get_company(db: Session, company_id: int) -> Company | None:
 
 
 def available_metrics(db: Session, company_id: int) -> list[str]:
+    """Metric names in lower case: seeds disagree on case ("Revenue" vs "revenue")."""
+    name = func.lower(func.trim(KPI.metric_name))
     rows = (
-        db.query(KPI.metric_name)
+        db.query(name)
         .filter(KPI.company_id == company_id)
         .distinct()
-        .order_by(KPI.metric_name)
+        .order_by(name)
         .all()
     )
-    return [name for (name,) in rows]
+    return [metric for (metric,) in rows]
 
 
 def get_series(
@@ -43,7 +45,7 @@ def get_series(
     """[(date, value)] sorted by date (then insertion order), start/end inclusive."""
     query = db.query(KPI.metric_date, KPI.metric_value).filter(
         KPI.company_id == company_id,
-        KPI.metric_name == metric,
+        func.lower(func.trim(KPI.metric_name)) == metric.strip().lower(),
     )
     if start is not None:
         query = query.filter(KPI.metric_date >= start)

@@ -569,7 +569,8 @@ def latest_summary(db: Session, company_id: int) -> list[Fact]:
         if m.latest_value is None or m.latest_date is None:
             continue
 
-        name, unit = display_name(m.metric_name), unit_of(m.metric_name)
+        metric = m.metric_name.strip().lower()  # seeds disagree on case ("Revenue")
+        name, unit = display_name(metric), unit_of(metric)
         latest = (m.latest_date.year, m.latest_date.month)
         base = f"{name} latest ({month_label(latest)}): {format_value(m.latest_value, unit)}"
         data = {"latest_date": m.latest_date, "latest_value": m.latest_value}
@@ -602,14 +603,14 @@ def latest_summary(db: Session, company_id: int) -> list[Fact]:
 
         facts.append(
             Fact(
-                id=f"{m.metric_name}.latest",
+                id=f"{metric}.latest",
                 text=text,
                 value=m.latest_value,
                 unit=unit,
                 period=_month_key(latest),
                 data=data,
                 notes=notes,
-                metric=m.metric_name,
+                metric=metric,
                 label=f"{name}, latest ({month_label(latest)})",
             )
         )

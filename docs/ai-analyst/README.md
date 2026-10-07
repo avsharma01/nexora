@@ -88,9 +88,9 @@ Errors: 400 blank question · 401 no/invalid token · 404 company not found · 4
 
 ## Final results (2026-10-07, branch `feature/ai-analyst-core`)
 ```
-pytest: 194 passed
+pytest: 195 passed
   test_guard_validate 56 · test_intent 37 · test_facts 29 · test_rag 22 · test_ai_service 19
-  test_llm 13 · test_seed_and_data_access 10 · test_api_ai_analysis 8
+  test_llm 13 · test_seed_and_data_access 11 · test_api_ai_analysis 8
 
 evals (ai_analyst_eval.jsonl, live Groq):
   Overall: 35/35 = 100.0%  (target >= 90%)
