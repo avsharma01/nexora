@@ -1,0 +1,15 @@
+# dependencies and build output
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# local environment (API URL overrides etc.)
+.env*.local
+
+# tooling files Next.js generates on first run
+AGENTS.md
+CLAUDE.md
+
+.DS_Store
