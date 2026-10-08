@@ -1,21 +1,21 @@
-# NEXORA backend dependencies (direct dependencies only; pins = versions tested on Python 3.14).
-# Install: python -m pip install -r requirements.txt
+# NEXORA backend, AI analyst, and test dependencies (Python 3.12).
+# Install with: python -m pip install -r requirements.txt
 
-# --- API + database (team) ---
+# API, server, schemas, and database
 fastapi==0.142.2
 uvicorn[standard]==0.54.0
 pydantic==2.13.5
-SQLAlchemy==2.1.3
+SQLAlchemy==2.0.54
 psycopg[binary]==3.3.6
 python-dotenv==1.2.4
 PyJWT==2.15.1
 pwdlib[argon2]==0.3.1
 
-# --- AI Business Analyst ---
-openai==3.26.0        # OpenAI-compatible client for Groq (app/ai/llm.py)
-fastembed==0.8.1      # local BAAI/bge-small-en-v1.5 embeddings (ONNX, no API key)
-pgvector==0.5.0       # SQLAlchemy Vector type for ai_document_chunks
+# AI Analyst and pgvector
+openai==3.26.0
+fastembed==0.8.1
+pgvector==0.5.0
 
-# --- tests ---
-pytest==9.1.1
-httpx==0.28.1         # needed by fastapi.testclient
+# Tests
+pytest==8.4.2
+httpx==0.28.1

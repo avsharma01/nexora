@@ -1,3 +1,5 @@
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.company import Company
@@ -7,15 +9,26 @@ from app.schemas.company import CompanyCreate, CompanyUpdate
 def create_company(
     db: Session,
     company_data: CompanyCreate,
-) -> Company:
+) -> Company | None:
+    name_key = company_data.name.strip().lower()
+    existing = db.query(Company.id).filter(
+        func.lower(Company.name) == name_key
+    ).first()
+    if existing is not None:
+        return None
+
     company = Company(
-        name=company_data.name,
+        name=company_data.name.strip(),
         industry=company_data.industry,
         description=company_data.description,
     )
 
     db.add(company)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return None
     db.refresh(company)
 
     return company
@@ -39,7 +52,14 @@ def update_company(
         return None
 
     if company_data.name is not None:
-        company.name = company_data.name
+        name = company_data.name.strip()
+        existing = db.query(Company.id).filter(
+            func.lower(Company.name) == name.lower(),
+            Company.id != company_id,
+        ).first()
+        if existing is not None:
+            return None
+        company.name = name
 
     if company_data.industry is not None:
         company.industry = company_data.industry
@@ -47,7 +67,11 @@ def update_company(
     if company_data.description is not None:
         company.description = company_data.description
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return None
     db.refresh(company)
 
     return company
@@ -61,6 +85,10 @@ def delete_company(
         return False
 
     db.delete(company)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return False
 
     return True
