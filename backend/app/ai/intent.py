@@ -88,6 +88,28 @@ _LAST_N_RE = re.compile(
     r"\b(?:last|past|previous)\s+(\d+|" + "|".join(NUMBER_WORDS) + r")\s+months?\b"
 )
 
+# "quarter 2", "2nd quarter", "second quarter", "q 2" -> "q2"
+_ORDINALS = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, "fourth": 4, "4th": 4}
+_QUARTER_WORDS_RE = re.compile(
+    r"\b(?:(" + "|".join(_ORDINALS) + r")\s+quarter|quarter\s+([1-4])|q\s+([1-4]))\b"
+)
+
+
+def normalize_quarters(text: str) -> str:
+    def repl(m: re.Match) -> str:
+        n = _ORDINALS[m.group(1)] if m.group(1) else int(m.group(2) or m.group(3))
+        return f"q{n}"
+
+    return _QUARTER_WORDS_RE.sub(repl, text)
+
+
+# A month or quarter tied to a relative year: "last year october", "october this year",
+# "q2 of last year", "this year's march". this/current = the latest data year; last/previous = the one before.
+_REL_YEAR = r"(this|current|last|previous|past)\s+year(?:'s|s)?"
+_PERIOD_WORD = r"(" + "|".join(sorted(MONTHS, key=len, reverse=True)) + r"|q[1-4])"
+_REL_BEFORE_RE = re.compile(rf"\b{_REL_YEAR}\s+{_PERIOD_WORD}\b")
+_REL_AFTER_RE = re.compile(rf"\b{_PERIOD_WORD}\s+(?:of\s+|in\s+)?{_REL_YEAR}\b")
+
 _FORECAST_RE = re.compile(
     r"\b(forecasts?|forecasted|predict\w*|projections?|projected|outlook|"
     r"next (?:month|quarter|year)|coming (?:months?|quarters?|year)|will (?:be|reach|grow|fall)|expected to)\b"
@@ -143,13 +165,27 @@ def _resolve_year(month_or_quarter_last: int, kind: str, explicit_years: list[in
 
 def extract_periods(text: str, latest: date | None) -> tuple[list[Period], tuple[Period, Period] | None]:
     """Explicit periods in order of mention, plus a relative window if one was asked for."""
-    text = text.lower()
+    text = normalize_quarters(text.lower())
     found: list[tuple[int, Period]] = []
     used: list[tuple[int, int]] = []
     explicit_years = [int(y) for y in _YEAR_RE.findall(text)]
 
     def free(span: tuple[int, int]) -> bool:
         return all(span[1] <= a or span[0] >= b for a, b in used)
+
+    # "last year october" / "october this year" / "q2 of last year": one period each.
+    ref_year = (latest or date.today()).year
+    for rx, rel_group, word_group in ((_REL_BEFORE_RE, 1, 2), (_REL_AFTER_RE, 2, 1)):
+        for m in rx.finditer(text):
+            if not free(m.span()):
+                continue
+            year = ref_year if m.group(rel_group) in ("this", "current") else ref_year - 1
+            word = m.group(word_group)
+            if word.startswith("q") and word[1:].isdigit():
+                found.append((m.start(), Period("quarter", year, int(word[1:]))))
+            else:
+                found.append((m.start(), Period("month", year, MONTHS[word])))
+            used.append(m.span())
 
     for m in _ISO_MONTH_RE.finditer(text):
         month = int(m.group(2))
@@ -189,7 +225,12 @@ def extract_periods(text: str, latest: date | None) -> tuple[list[Period], tuple
             p = Period(p.kind, _resolve_year(p.index, p.kind, explicit_years, latest), p.index)
         periods.append(p)
 
-    # Relative windows, measured from the latest data month.
+    # Relative windows, measured from the latest data month. Phrases already used for a
+    # specific month/quarter ("last year october") don't also count as a whole-year window.
+    rest = text
+    for a, b in used:
+        rest = rest[:a] + " " * (b - a) + rest[b:]
+    text = rest
     window = None
     if latest is not None:
         end = Period("month", latest.year, latest.month)
@@ -219,7 +260,7 @@ def detect_intent(
     latest: date | None = None,
     history: list[dict] | None = None,
 ) -> Intent:
-    text = question.lower().strip()
+    text = normalize_quarters(question.lower().strip())
     metrics = find_metrics(text)
     periods, window = extract_periods(text, latest)
     unknown = _has_any(text, UNAVAILABLE_TERMS)

@@ -14,7 +14,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.ai import data_access, guard, llm, retrieval
+from app.ai import data_access, guard, llm, retrieval, spelling
 from app.ai.context import Context, build_context, figures_for, source_for, source_for_excerpt
 from app.ai.embeddings import EmbeddingError
 from app.ai.retrieval import Excerpt
@@ -79,6 +79,27 @@ def _rows_between(series, start: Period | None, end: Period | None):
     return [(d, v) for d, v in series if lo <= d <= hi]
 
 
+def _missing_note(metric: str, missing: list[Period], series) -> str:
+    """'No Revenue data for October 2026 (the data covers October 2024 to September 2026).'"""
+    covers = ""
+    if series:
+        first, last = series[0][0], series[-1][0]
+        covers = f" (the data covers {month_label((first.year, first.month))} to {month_label((last.year, last.month))})"
+    names = " or ".join(p.label for p in missing)
+    return f"No {display_name(metric)} data for {names}{covers}."
+
+
+def _values_with_gaps(series, periods: list[Period], metric: str) -> list[Fact]:
+    """value_at for every period that has data; the periods without data are named in a note,
+    so a partly answerable question gets a partial answer instead of a refusal."""
+    found = [(p, value_at(series, p, metric=metric)) for p in periods]
+    present = [f for _, f in found if f is not None]
+    missing = [p for p, f in found if f is None]
+    if present and missing:
+        present[-1].notes.append(_missing_note(metric, missing, series))
+    return present
+
+
 def _clean_history(history: list[dict] | None) -> list[dict]:
     turns = [
         {"role": t["role"], "content": str(t.get("content", ""))[:MAX_HISTORY_CHARS]}
@@ -116,9 +137,9 @@ def plan(
                 facts.append(trend(series[m], *intent.window, metric=m))
                 rows[m] = _rows_between(series[m], *intent.window)
                 continue
+            facts.extend(_values_with_gaps(series[m], periods, m))
             for p in periods:
                 before = previous_period(p)
-                facts.append(value_at(series[m], p, metric=m))
                 # Context for the value: change vs the period before (month vs month, Q vs Q).
                 facts.append(compare_periods(series[m], before, p, metric=m))
                 rows.setdefault(m, []).extend(
@@ -150,7 +171,9 @@ def plan(
         # "why" also looks at the other metrics over the same two periods.
         targets = metrics + [m for m in available if m not in metrics] if intent.intent == "why" else metrics
         for m in targets:
-            facts.append(compare_periods(series[m], a, b, metric=m))
+            fact = compare_periods(series[m], a, b, metric=m)
+            # One of the two periods has no data: still give the one that exists, and say which is missing.
+            facts.extend([fact] if fact is not None else _values_with_gaps(series[m], [a, b], m))
             rows[m] = _rows_between(series[m], Period("month", *a.months[0]), Period("month", *b.months[-1]))
 
     elif intent.intent == "extremes":
@@ -240,7 +263,8 @@ def _ask(
     if company is None:
         raise CompanyNotFoundError(f"Company {company_id} not found")
 
-    question = question.strip()
+    # Forgive typos in the words that matter ("octobe", "quater", "revnue") before anything reads them.
+    question, spelling_fixes = spelling.correct(question.strip())
     history = _clean_history(history)
     available = data_access.available_metrics(db, company_id)
     first, latest = data_access.earliest_date(db, company_id), data_access.latest_date(db, company_id)
@@ -257,6 +281,8 @@ def _ask(
         example = "its KPIs once data has been added"
 
     meta = {"company": company.name}
+    if spelling_fixes:
+        meta["spelling"] = [f"{typed} -> {fixed}" for typed, fixed in spelling_fixes]
 
     def done(status, answer, **kwargs):
         meta["latency_ms"] = round((time.perf_counter() - started) * 1000)
