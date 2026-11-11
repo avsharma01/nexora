@@ -9,7 +9,9 @@ NEXORA is an AI-powered company intelligence and financial forecasting platform.
 ```
 nexora/
 ├── backend/            # FastAPI Python backend (SQLAlchemy, PostgreSQL, JWT auth, RBAC)
+│   ├── scripts/        # Demo users, AI test data, document ingestion, evals
 │   └── app/
+│       ├── ai/         # AI Business Analyst: guard, intent, facts, RAG, LLM, number check
 │       ├── api/        # Routers for auth, company, kpi, analytics, forecast, ai_analyst
 │       ├── core/       # Security, JWT tokens, RBAC dependencies
 │       ├── models/     # SQLAlchemy database models
@@ -18,11 +20,9 @@ nexora/
 │       └── seed_db.py  # Database seeder for demo companies and users
 │
 ├── frontend/           # Next.js 16 (App Router, React 19, TypeScript)
-│   ├── src/
-│   │   ├── app/        # App Router pages and global design tokens
-│   │   ├── components/ # Modular UI views, SVG charts, and layouts
-│   │   ├── context/    # App state management (auth, live KPIs, RBAC)
-│   │   └── lib/        # Financial calculations, types, and backend API client
+│   ├── app/            # App Router entry: page.tsx, layout.tsx, globals.css
+│   ├── components/nexora/  # Login, shell, workspace state (React context) and one file per page
+│   ├── lib/nexora/     # API client, role permissions, monthly maths, formatting
 │   └── README.md       # Frontend documentation
 │
 └── docker-compose.yml  # PostgreSQL container definition
@@ -66,6 +66,18 @@ python -m app.seed_db
 
 ## 🔑 Demo Credentials
 
-- **Admin**: `admin@nexora.io` / `demo123` (Full access + live editable KPIs)
-- **Analyst**: `analyst@nexora.io` / `demo123` (Full view access)
-- **Viewer**: `viewer@nexora.io` / `demo123` (Read-only on Dashboard, KPIs, Analytics, Forecast)
+Two seed scripts create demo accounts. Run either (or both) from `backend/`.
+
+| Role | `python -m scripts.seed_demo_users` (login-page buttons) | `python -m app.seed_db` |
+| --- | --- | --- |
+| Admin | `admin@nexora.demo` / `nexora-demo-admin` | `admin@nexora.io` / `demo123` |
+| Analyst | `analyst@nexora.demo` / `nexora-demo-analyst` | `analyst@nexora.io` / `demo123` |
+| Viewer | `viewer@nexora.demo` / `nexora-demo-viewer` | `viewer@nexora.io` / `demo123` |
+
+What each role can do:
+
+- **Admin**: everything, including deleting companies and KPI rows
+- **Analyst**: view everything, create and edit companies and KPI rows (no deletes)
+- **Viewer**: read-only (dashboards, analytics, forecast, AI analyst)
+
+Public sign-up always creates a Viewer and needs a password of at least 8 characters.
