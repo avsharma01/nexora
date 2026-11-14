@@ -4,14 +4,15 @@ import { useEffect, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Info, RotateCw, TriangleAlert } from 'lucide-react'
 import { ApiError, companyForecast, describeError, type ForecastResponse } from '@/lib/nexora/api'
-import { METRICS, type Metric } from '@/lib/nexora/data'
+import { METRICS, valueOf } from '@/lib/nexora/data'
+import { metricInfo } from '@/lib/nexora/metrics'
 import { amount, compact, monthLabel, titleCase } from '@/lib/nexora/format'
 import { axis, Badge, Card, ErrorBox, PageTitle, SectionHeader } from '../ui'
 import { useWorkspace } from '../workspace'
 
 const HORIZON = 6
 
-type State = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; res: Partial<Record<Metric, ForecastResponse>> }
+type State = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; res: Partial<Record<string, ForecastResponse>> }
 
 interface ChartRow {
   month: string
@@ -22,18 +23,21 @@ interface ChartRow {
 
 export function Forecast() {
   const { company, data, unit, session, expired } = useWorkspace()
-  const [metric, setMetric] = useState<Metric>('revenue')
+  const [metric, setMetric] = useState<string>('revenue')
   const [state, setState] = useState<State>({ kind: 'loading' })
   const [nonce, setNonce] = useState(0)
 
   // The forecast endpoint matches metric names exactly, so send the name as stored ("revenue" or "Revenue").
-  const stored = (m: Metric) => data?.kpis.find((k) => k.metric_name.trim().toLowerCase() === m)?.metric_name ?? m
+  const stored = (m: string) => data?.kpis.find((k) => k.metric_name.trim().toLowerCase() === m)?.metric_name ?? m
+
+  // Every metric the company has: revenue/expenses/profit plus imported ones (customers, orders, ...).
+  const all = [...METRICS, ...(data?.extras ?? [])]
 
   useEffect(() => {
     if (!company || !data) return
     let alive = true
     setState({ kind: 'loading' })
-    Promise.all(METRICS.map((m) => companyForecast(company.id, stored(m), HORIZON, session.token).then((r) => [m, r] as const)))
+    Promise.all(all.map((m) => companyForecast(company.id, stored(m), HORIZON, session.token).then((r) => [m, r] as const)))
       .then((pairs) => alive && setState({ kind: 'ready', res: Object.fromEntries(pairs) }))
       .catch((err) => {
         if (!alive) return
@@ -46,13 +50,16 @@ export function Forecast() {
 
   if (!company || !data) return null
 
+  // Money metrics use the company's currency; counts (customers, orders) are plain numbers.
+  const info = metricInfo(metric)
+  const u = info.money ? unit : null
   const res = state.kind === 'ready' ? state.res[metric] : undefined
   const points = res?.forecasts ?? []
   const insufficient = res?.status === 'insufficient_data'
   // The old placeholder repeated the latest value; only warn if the backend still does that.
   const flat = points.length > 1 && points.every((p) => p.forecast_value === points[0].forecast_value && p.forecast_value === res?.historical_latest_value)
 
-  const history: ChartRow[] = data.rows.slice(-18).map((r) => ({ month: r.month, actual: r[metric], estimate: null, band: null }))
+  const history: ChartRow[] = data.rows.slice(-18).map((r) => ({ month: r.month, actual: valueOf(r, metric), estimate: null, band: null }))
   // Join the estimate line to the last actual point so the two read as one story.
   if (history.length && points.length) {
     const last = history[history.length - 1]
@@ -86,7 +93,7 @@ export function Forecast() {
       )}
 
       <div className="flex flex-wrap gap-2">
-        {METRICS.map((m) => (
+        {all.map((m) => (
           <button key={m} type="button" onClick={() => setMetric(m)} className={metric === m ? 'filter-active' : 'filter-button'}>{titleCase(m)}</button>
         ))}
       </div>
@@ -107,17 +114,17 @@ export function Forecast() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Stat label="Latest actual" value={compact(res?.historical_latest_value ?? lastActual?.[metric] ?? null, unit)} note={monthLabel(lastActual?.date)} />
+            <Stat label="Latest actual" value={compact(res?.historical_latest_value ?? (lastActual ? valueOf(lastActual, metric) : null), u)} note={monthLabel(lastActual?.date)} />
             <Stat
               label={`Estimate, ${HORIZON} months out`}
-              value={end ? compact(end.forecast_value, unit) : 'n/a'}
-              note={end ? `${monthLabel(end.forecast_date)} · 95% range ${compact(end.lower_bound, unit)} to ${compact(end.upper_bound, unit)}` : ''}
+              value={end ? compact(end.forecast_value, u) : 'n/a'}
+              note={end ? `${monthLabel(end.forecast_date)} · 95% range ${compact(end.lower_bound, u)} to ${compact(end.upper_bound, u)}` : ''}
             />
             <Stat label="Model" value={res?.model_name ?? 'n/a'} note={res ? `Trained on ${res.history_points} months` : ''} mono />
             <Stat
               label="Backtest accuracy"
               value={ev?.mape != null ? `${ev.mape.toFixed(1)}% MAPE` : 'n/a'}
-              note={ev ? `MAE ${ev.mae != null ? compact(ev.mae, unit) : 'n/a'} over ${ev.backtest_points} past months` : 'Not enough history to backtest'}
+              note={ev ? `MAE ${ev.mae != null ? compact(ev.mae, u) : 'n/a'} over ${ev.backtest_points} past months` : 'Not enough history to backtest'}
             />
           </div>
 
@@ -135,8 +142,8 @@ export function Forecast() {
                   <ComposedChart data={chart} margin={{ left: 4, right: 8 }}>
                     <CartesianGrid vertical={false} stroke="var(--border)" />
                     <XAxis dataKey="month" {...axis} tickFormatter={(m) => monthLabel(`${m}-01`).replace(' 20', " '")} minTickGap={24} />
-                    <YAxis {...axis} width={64} tickFormatter={(v) => compact(v, unit)} domain={['auto', 'auto']} />
-                    <Tooltip content={<ForecastTooltip unit={unit} />} cursor={{ stroke: 'rgb(var(--tint-rgb) / 0.15)' }} />
+                    <YAxis {...axis} width={64} tickFormatter={(v) => compact(v, u)} domain={['auto', 'auto']} />
+                    <Tooltip content={<ForecastTooltip unit={u} />} cursor={{ stroke: 'rgb(var(--tint-rgb) / 0.15)' }} />
                     {lastActual && <ReferenceLine x={lastActual.month} stroke="rgb(var(--tint-rgb) / 0.2)" strokeDasharray="3 3" label={{ value: 'latest actual', fill: 'var(--faint)', fontSize: 11, position: 'insideTopLeft' }} />}
                     <Area dataKey="band" name="95% range" stroke="none" fill="var(--good)" fillOpacity={0.14} isAnimationActive={false} connectNulls={false} />
                     <Line dataKey="actual" name="Actual" stroke="var(--chart-1)" strokeWidth={2.25} dot={false} connectNulls={false} />

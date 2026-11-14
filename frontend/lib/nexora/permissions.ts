@@ -9,6 +9,7 @@ export type Action =
   | 'ai:ask' // POST /companies/{id}/ai-analysis
   | 'forecast:run' // POST /companies/{id}/forecast
   | 'scenario:use' // browser-only sliders, nothing is saved
+  | 'report:export' // Reports page, CSV downloads, print
   | 'company:create' // POST /companies/
   | 'company:update' // PUT /companies/{id}
   | 'company:delete' // DELETE /companies/{id}
@@ -17,18 +18,30 @@ export type Action =
   | 'kpi:delete' // DELETE /kpis/{id}
 
 const ALL: Role[] = ['admin', 'analyst', 'viewer']
+// Admin: every data change. Analyst: the analysis tools. Viewer: read-only dashboards.
+const ANALYSIS: Role[] = ['admin', 'analyst']
+const ADMIN: Role[] = ['admin']
 
 export const PERMISSIONS: Record<Action, readonly Role[]> = {
   'data:view': ALL,
-  'ai:ask': ALL,
-  'forecast:run': ALL,
-  'scenario:use': ALL,
-  'company:create': ['admin', 'analyst'],
-  'company:update': ['admin', 'analyst'],
-  'company:delete': ['admin'],
-  'kpi:create': ['admin', 'analyst'],
-  'kpi:update': ['admin', 'analyst'],
-  'kpi:delete': ['admin'],
+  'ai:ask': ANALYSIS,
+  'forecast:run': ANALYSIS,
+  'scenario:use': ANALYSIS,
+  'report:export': ANALYSIS,
+  'company:create': ADMIN,
+  'company:update': ADMIN,
+  'company:delete': ADMIN,
+  'kpi:create': ADMIN,
+  'kpi:update': ADMIN,
+  'kpi:delete': ADMIN,
+}
+
+/** Pages that need more than read access; the menu hides them and the page shows "Access restricted". */
+export const PAGE_ACTION: Partial<Record<string, Action>> = {
+  Forecast: 'forecast:run',
+  'AI Analyst': 'ai:ask',
+  Scenarios: 'scenario:use',
+  Reports: 'report:export',
 }
 
 export function can(user: Pick<Session, 'role'> | null | undefined, action: Action): boolean {

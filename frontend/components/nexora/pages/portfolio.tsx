@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ArrowUpRight, Info, Plus } from 'lucide-react'
-import { ApiError, companyKpis, createCompany, describeError } from '@/lib/nexora/api'
+import { ApiError, companyKpis, createCompany, describeError, importNewCompany } from '@/lib/nexora/api'
+import { ImportErrors, importSummary, type PickedCsv } from '../csv-import'
 import { monthly, trailingYear, type MonthRow } from '@/lib/nexora/data'
 import { compact, monthLabel, pct } from '@/lib/nexora/format'
 import { AccessRestricted, axis, Badge, BrowserCalcBadge, Card, ChartTooltip, ErrorBox, Notice, PageTitle, SectionHeader } from '../ui'
@@ -27,6 +28,7 @@ export function Portfolio() {
   const [creating, setCreating] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
 
   useEffect(() => {
     const sync = () => setCreating(window.location.hash === '#company/new')
@@ -38,19 +40,30 @@ export function Portfolio() {
     history.replaceState(null, '', on ? '#company/new' : location.pathname + location.search)
     setCreating(on)
     setMsg(null)
+    setImportError(null)
   }
 
-  async function create(v: { name: string; industry: string; description: string }) {
+  async function create(v: { name: string; industry: string; description: string }, csv: PickedCsv | null) {
     setBusy(true)
     setMsg(null)
+    setImportError(null)
+    const details = { name: v.name.trim(), industry: v.industry.trim() || null, description: v.description.trim() || null }
     try {
-      const c = await createCompany({ name: v.name.trim(), industry: v.industry.trim() || null, description: v.description.trim() || null }, session.token)
-      await reloadCompanies(c.id)
-      open(false)
-      setMsg({ tone: 'good', text: `${c.name} created. Add its KPI records on the Company page.` })
+      if (csv) {
+        const r = await importNewCompany({ ...details, csv: csv.text }, session.token)
+        await reloadCompanies(r.company.id)
+        open(false)
+        setMsg({ tone: 'good', text: `${r.company.name} created with ${importSummary(r)}.` })
+      } else {
+        const c = await createCompany(details, session.token)
+        await reloadCompanies(c.id)
+        open(false)
+        setMsg({ tone: 'good', text: `${c.name} created. Import its monthly CSV or add KPI records on the Company page.` })
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return expired()
-      setMsg({ tone: 'bad', text: describeError(err, { conflict: 'A company with that name already exists.' }) })
+      if (err instanceof ApiError && err.status === 422 && csv) setImportError(err.message)
+      else setMsg({ tone: 'bad', text: describeError(err, { conflict: 'A company with that name already exists.' }) })
     } finally {
       setBusy(false)
     }
@@ -93,7 +106,9 @@ export function Portfolio() {
       />
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
       {creating && !can('company:create') && <AccessRestricted what="create companies" onBack={() => open(false)} />}
-      {creating && can('company:create') && <NewCompanyForm busy={busy} onSave={create} onCancel={() => open(false)} />}
+      {creating && can('company:create') && (
+        <NewCompanyForm busy={busy} onSave={create} onCancel={() => open(false)} error={importError && <ImportErrors message={importError} />} />
+      )}
       {error && <ErrorBox message={error} />}
       <p className="text-xs text-muted-foreground">
         Status rule (calculated here, not a backend score): <span className="font-medium text-foreground/80">Loss</span> = latest month's profit is negative ·{' '}

@@ -29,7 +29,7 @@ def create_kpi_endpoint(
     kpi_data: KPICreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(
-        require_role(UserRole.ADMIN, UserRole.ANALYST)
+        require_role(UserRole.ADMIN)
     ),
 ):
     company = db.get(Company, company_id)
@@ -104,7 +104,7 @@ def update_kpi_endpoint(
     kpi_data: KPIUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(
-        require_role(UserRole.ADMIN, UserRole.ANALYST)
+        require_role(UserRole.ADMIN)
     ),
 ):
     kpi = update_kpi(db, kpi_id, kpi_data)

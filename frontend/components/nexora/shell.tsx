@@ -3,22 +3,24 @@
 import { useEffect, useState } from 'react'
 import {
   BarChart3, Bot, BriefcaseBusiness, Building2, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign,
-  FileText, Home, LogOut, Menu, Settings, ShieldAlert, SlidersHorizontal, TrendingUp, X, type LucideIcon,
+  FileText, Home, LogOut, Menu, Plus, Settings, SlidersHorizontal, TrendingUp, X, type LucideIcon,
 } from 'lucide-react'
 import { health } from '@/lib/nexora/api'
 import { ThemeToggle } from './theme-toggle'
 import { Mark, RoleBadge } from './ui'
 import { useWorkspace, type Page } from './workspace'
+import { PAGE_ACTION } from '@/lib/nexora/permissions'
 
 const NAV: { label: string; items: [Page, LucideIcon][] }[] = [
   { label: 'MAIN', items: [['Dashboard', Home], ['Company', Building2], ['Financials', CircleDollarSign], ['Portfolio', BriefcaseBusiness], ['Analytics', BarChart3]] },
-  { label: 'INTELLIGENCE', items: [['Forecast', TrendingUp], ['AI Analyst', Bot], ['Anomalies', ShieldAlert], ['Scenarios', SlidersHorizontal]] },
+  // Anomalies is hidden until the backend anomaly endpoint exists (the page is a placeholder).
+  { label: 'INTELLIGENCE', items: [['Forecast', TrendingUp], ['AI Analyst', Bot], ['Scenarios', SlidersHorizontal]] },
   { label: 'REPORTING', items: [['Reports', FileText]] },
   { label: 'SYSTEM', items: [['Settings', Settings]] },
 ]
 
 export function Shell({ onSignOut, children }: { onSignOut: () => void; children: React.ReactNode }) {
-  const { page, go, session, companies, company, selectCompany } = useWorkspace()
+  const { page, go, session, companies, company, selectCompany, can } = useWorkspace()
   const [collapsed, setCollapsed] = useState(false)
   const [mobile, setMobile] = useState(false)
   const [up, setUp] = useState<boolean | null>(null)
@@ -33,22 +35,32 @@ export function Shell({ onSignOut, children }: { onSignOut: () => void; children
     return () => { alive = false; clearInterval(t) }
   }, [])
 
+  // Role accent colours (globals.css :root[data-role]); cleared again on sign-out.
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.role = session.role
+    return () => { delete root.dataset.role }
+  }, [session.role])
+
   const navTo = (p: Page) => { go(p); setMobile(false) }
+  // Pages the role can't use (Viewer: Forecast, AI Analyst, Scenarios, Reports) are left out of the menu.
+  const allowed = (p: Page) => { const need = PAGE_ACTION[p]; return !need || can(need) }
+  const nav = NAV.map((g) => ({ ...g, items: g.items.filter(([p]) => allowed(p)) })).filter((g) => g.items.length > 0)
 
   return (
     <div className="min-h-[100dvh]" style={{ ['--side' as any]: `${width}px` }}>
-      <aside className="glass-strong fixed inset-y-0 left-0 z-20 hidden flex-col rounded-none border-y-0 border-l-0 transition-[width] lg:flex" style={{ width }}>
+      <aside className="glass-strong fixed inset-y-0 left-0 z-20 hidden flex-col rounded-none border-y-0 border-l-0 border-r-role/25 transition-[width] lg:flex" style={{ width, backgroundImage: 'linear-gradient(180deg, rgb(var(--role-rgb) / 0.16), rgb(var(--role-rgb) / 0.04) 45%, transparent 75%)' }}>
         <div className="flex h-20 items-center gap-3 px-5">
           <Mark />
           {!collapsed && (
             <div>
               <p className="font-mono text-sm font-semibold tracking-[0.24em]">NEXORA</p>
-              <p className="text-[9px] uppercase tracking-[0.14em] text-faint">Intelligence platform</p>
+              <p className="text-[9px] uppercase tracking-[0.14em] text-role">{session.role} workspace</p>
             </div>
           )}
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-3" aria-label="Main">
-          {NAV.map((group) => (
+          {nav.map((group) => (
             <div key={group.label} className="mb-6">
               <p className={`mb-2 px-3 text-[10px] font-semibold tracking-[0.16em] text-faint ${collapsed ? 'text-center' : ''}`}>{collapsed ? '·' : group.label}</p>
               {group.items.map(([label, Icon]) => (
@@ -58,9 +70,9 @@ export function Shell({ onSignOut, children }: { onSignOut: () => void; children
                   onClick={() => navTo(label as Page)}
                   title={collapsed ? label : undefined}
                   aria-current={page === label ? 'page' : undefined}
-                  className={`relative mb-0.5 flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm transition ${collapsed ? 'justify-center' : ''} ${page === label ? 'bg-tint/[0.08] text-foreground shadow-[inset_0_1px_0_rgb(var(--tint-rgb) / 0.06)]' : 'text-muted-foreground hover:bg-tint/[0.04] hover:text-foreground'}`}
+                  className={`relative mb-0.5 flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm transition ${collapsed ? 'justify-center' : ''} ${page === label ? 'bg-role/[0.12] text-foreground shadow-[inset_0_1px_0_rgb(var(--tint-rgb) / 0.06)]' : 'text-muted-foreground hover:bg-tint/[0.04] hover:text-foreground'}`}
                 >
-                  {page === label && <span aria-hidden="true" className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-good" />}
+                  {page === label && <span aria-hidden="true" className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-role" />}
                   <Icon className="size-4 shrink-0" />
                   {!collapsed && label}
                 </button>
@@ -70,7 +82,7 @@ export function Shell({ onSignOut, children }: { onSignOut: () => void; children
         </nav>
         <div className="border-t border-tint/[0.06] p-3">
           <div className={`flex items-center gap-3 rounded-xl bg-tint/[0.04] p-2 ${collapsed ? 'justify-center' : ''}`}>
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-tint/[0.1] text-xs font-semibold">{initials}</span>
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-role/[0.16] text-xs font-semibold text-role">{initials}</span>
             {!collapsed && (
               <>
                 <div className="min-w-0">
@@ -90,6 +102,7 @@ export function Shell({ onSignOut, children }: { onSignOut: () => void; children
       </aside>
 
       <header className="fixed inset-x-0 top-0 z-10 flex h-20 items-center justify-between gap-3 border-b border-tint/[0.06] bg-background/60 px-4 backdrop-blur-xl lg:left-[var(--side)] lg:px-8">
+        <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-[-1px] h-[2px] bg-gradient-to-r from-role/10 via-role/80 to-role/10" />
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" onClick={() => setMobile(true)} className="icon-button lg:hidden" aria-label="Open menu"><Menu className="size-5" /></button>
           <div className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
@@ -111,6 +124,17 @@ export function Shell({ onSignOut, children }: { onSignOut: () => void; children
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             </label>
           )}
+          {can('company:create') && (
+            // Opens Portfolio's "New company" form (#company/new) from any page.
+            <button
+              type="button"
+              onClick={() => { window.location.hash = 'company/new'; go('Portfolio'); setMobile(false) }}
+              className="button-secondary h-10"
+              title="New company (with optional monthly CSV)"
+            >
+              <Plus className="size-3.5" /><span className="hidden xl:inline">New company</span>
+            </button>
+          )}
           <span className="hidden items-center gap-2 rounded-full border border-border px-3 py-1.5 text-[11px] text-muted-foreground sm:inline-flex" role="status">
             <span className={`size-1.5 rounded-full ${up === null ? 'bg-faint' : up ? 'bg-good' : 'bg-bad'}`} />
             {up === null ? 'Checking' : up ? 'API live' : 'API offline'}
@@ -131,8 +155,8 @@ export function Shell({ onSignOut, children }: { onSignOut: () => void; children
             <button type="button" onClick={() => setMobile(false)} className="icon-button" aria-label="Close menu"><X className="size-5" /></button>
           </div>
           <div className="mt-8 flex flex-col gap-1">
-            {NAV.flatMap((g) => g.items).map(([label, Icon]) => (
-              <button key={label} type="button" onClick={() => navTo(label as Page)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${page === label ? 'bg-tint/[0.08]' : 'hover:bg-tint/[0.04]'}`}>
+            {nav.flatMap((g) => g.items).map(([label, Icon]) => (
+              <button key={label} type="button" onClick={() => navTo(label as Page)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${page === label ? 'bg-role/[0.12]' : 'hover:bg-tint/[0.04]'}`}>
                 <Icon className="size-4" />{label}
               </button>
             ))}

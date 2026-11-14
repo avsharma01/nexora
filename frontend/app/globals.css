@@ -49,6 +49,9 @@
   --color-warn: var(--warn);
   --color-warn-soft: var(--warn-soft);
   --color-faint: var(--faint);
+  /* Role accent (admin / analyst / viewer): chrome only, never data colours. */
+  --color-role: rgb(var(--role-rgb));
+  --color-role-foreground: var(--role-foreground);
   /* White overlays in dark mode, black overlays in light mode: bg-tint/[0.04] etc. */
   --color-tint: rgb(var(--tint-rgb));
 
@@ -186,6 +189,35 @@
   --sidebar-ring: rgba(0, 0, 0, 0.3);
 }
 
+/*
+  Role accent. Shell sets <html data-role="admin|analyst|viewer"> after sign-in, so everyone can
+  tell at a glance whose workspace they are in. It tints chrome only (nav marker, avatar, role
+  badge, primary buttons, background glow); good/bad/warn and chart colours never change.
+  Viewer (and the signed-out page) keep the original emerald.
+*/
+:root {
+  --role-rgb: 62 207 154;
+  --role-foreground: #04140d;
+}
+:root[data-role='admin'] {
+  --role-rgb: 167 139 250; /* violet */
+  --role-foreground: #120a24;
+}
+:root[data-role='analyst'] {
+  --role-rgb: 56 189 248; /* sky */
+  --role-foreground: #04121c;
+}
+:root.light {
+  --role-rgb: 4 120 87;
+  --role-foreground: #ffffff;
+}
+:root.light[data-role='admin'] {
+  --role-rgb: 109 40 217;
+}
+:root.light[data-role='analyst'] {
+  --role-rgb: 3 105 161;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -210,7 +242,8 @@
     background:
       radial-gradient(60rem 40rem at 12% -10%, var(--light-1), transparent 70%),
       radial-gradient(50rem 36rem at 105% 30%, var(--light-2), transparent 70%),
-      radial-gradient(44rem 30rem at 50% 115%, rgba(62, 207, 154, 0.05), transparent 70%),
+      radial-gradient(44rem 30rem at 50% 115%, rgb(var(--role-rgb) / 0.14), transparent 70%),
+      radial-gradient(40rem 24rem at 85% -12%, rgb(var(--role-rgb) / 0.13), transparent 70%),
       var(--canvas);
   }
   /* Film grain: the texture. */
@@ -241,7 +274,7 @@
   .glass { background: var(--glass); }
   .glass-strong { background: var(--glass-strong); }
 
-  .button-primary { @apply inline-flex h-9 items-center gap-2 rounded-[10px] bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.6)] transition hover:opacity-90 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100; }
+  .button-primary { @apply inline-flex h-9 items-center gap-2 rounded-[10px] bg-role px-3.5 text-xs font-semibold text-role-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.35)] transition hover:opacity-90 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100; }
   .button-secondary { @apply inline-flex h-9 items-center gap-2 rounded-[10px] border border-border bg-tint/[0.04] px-3.5 text-xs font-semibold text-foreground transition hover:bg-tint/[0.08] active:scale-[0.98] disabled:opacity-40; }
   .button-ghost { @apply inline-flex h-8 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-medium text-muted-foreground transition hover:bg-tint/[0.06] hover:text-foreground; }
   .icon-button { @apply relative flex size-9 items-center justify-center rounded-[10px] text-muted-foreground transition hover:bg-tint/[0.06] hover:text-foreground; }

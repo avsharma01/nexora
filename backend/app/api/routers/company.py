@@ -29,7 +29,7 @@ def create_company_endpoint(
     company_data: CompanyCreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(
-        require_role(UserRole.ADMIN, UserRole.ANALYST)
+        require_role(UserRole.ADMIN)
     ),
 ):
     company = create_company(db, company_data)
@@ -93,7 +93,7 @@ def update_company_endpoint(
     company_data: CompanyUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(
-        require_role(UserRole.ADMIN, UserRole.ANALYST)
+        require_role(UserRole.ADMIN)
     ),
 ):
     company = update_company(db, company_id, company_data)

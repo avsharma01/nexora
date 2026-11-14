@@ -225,6 +225,27 @@ export const updateCompany = (id: number, body: CompanyInput, token: string) =>
 export const deleteCompany = (id: number, token: string) =>
   request<null>(`/companies/${id}`, { method: 'DELETE' }, token)
 
+// ---- CSV import (monthly rows; see backend/app/services/kpi_import.py for the format) ----
+
+export interface ImportResult {
+  company: Company
+  months: number
+  first_month: string
+  last_month: string
+  metrics: string[]
+  created: number
+  updated: number
+  profit_computed: number
+}
+
+/** Create a company and its monthly KPIs in one step (all or nothing). */
+export const importNewCompany = (body: CompanyInput & { name: string; csv: string }, token: string) =>
+  request<ImportResult>('/companies/import', json('POST', body), token)
+
+/** Add or replace monthly values for an existing company (same metric + month is replaced). */
+export const importKpis = (companyId: number, csv: string, token: string) =>
+  request<ImportResult>(`/companies/${companyId}/kpis/import`, json('POST', { csv }), token)
+
 export const createKpi = (companyId: number, body: Required<KpiInput>, token: string) =>
   request<KPI>(`/companies/${companyId}/kpis`, json('POST', body), token)
 export const updateKpi = (id: number, body: KpiInput, token: string) =>

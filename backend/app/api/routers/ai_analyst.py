@@ -25,10 +25,10 @@ def analyze_company(
     request_data: AIAnalystRequest,
     db: Session = Depends(get_db),
     current_user: dict = Depends(
+        # Analysis tools: Admin and Analyst. Viewer sees dashboards only.
         require_role(
             UserRole.ADMIN,
             UserRole.ANALYST,
-            UserRole.VIEWER,
         )
     ),
 ):

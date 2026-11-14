@@ -119,6 +119,7 @@ def keyword_check(
     company_id: int,
     companies: list[tuple[int, str]],
     history: list[dict] | None = None,
+    extra_metrics: list[str] | tuple[str, ...] = (),
 ) -> GuardResult:
     text = question.lower()
     if hit := _match(INJECTION_PATTERNS, text):
@@ -129,7 +130,7 @@ def keyword_check(
         return GuardResult(False, "advice", hit)
     if hit := _match(OFF_TOPIC_TASKS, text):
         return GuardResult(False, "off_topic", hit)
-    if not is_business_question(text) and not is_follow_up(text, history):
+    if not is_business_question(text, extra_metrics) and not is_follow_up(text, history):
         return GuardResult(False, "off_topic", "no business or metric words")
     return GuardResult(True)
 
@@ -140,10 +141,11 @@ def check(
     companies: list[tuple[int, str]],
     history: list[dict] | None = None,
     use_model: bool = True,
+    extra_metrics: list[str] | tuple[str, ...] = (),
 ) -> GuardResult:
     """Keyword rules first (free, deterministic); then Prompt Guard as an extra
     injection check. If the Prompt Guard call fails, the keyword result stands."""
-    result = keyword_check(question, company_id, companies, history)
+    result = keyword_check(question, company_id, companies, history, extra_metrics)
     if not result.allowed or not use_model:
         return result
 

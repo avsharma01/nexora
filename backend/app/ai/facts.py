@@ -20,7 +20,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.ai.metrics_config import display_name, unit_of
+from app.ai.metrics_config import aggregation_of, display_name, unit_of
 from app.services.analytics_service import get_company_analytics
 
 
@@ -283,14 +283,24 @@ def _direction(change: float) -> str:
 
 
 def _period_total(
-    months: dict[MonthKey, tuple[date, float]], period: Period
+    months: dict[MonthKey, tuple[date, float]], period: Period, how: str = "sum"
 ) -> dict | None:
+    """One value for the period: "sum" of the months (flows), the "last" month's value (stocks
+    such as customers or headcount) or their "average" (rates). See aggregation_of()."""
     present = [k for k in period.months if k in months]
     if not present:
         return None
     missing = [k for k in period.months if k not in months]
+    values = [months[k][1] for k in present]
+    if how == "last":
+        value = values[-1]
+    elif how == "average":
+        value = round(sum(values) / len(values), 2)
+    else:
+        value = sum(values)
     return {
-        "value": sum(months[k][1] for k in present),
+        "value": value,
+        "how": how,
         "months_present": len(present),
         "months_expected": len(period.months),
         "missing": [_month_key(k) for k in missing],
@@ -311,7 +321,13 @@ def _partial_note(period: Period, total: dict) -> list[str]:
 def _period_phrase(period: Period, total: dict) -> str:
     if period.kind == "month":
         return period.label
-    return f"{period.label} (sum of {total['months_present']} months)"
+    n = total["months_present"]
+    how = total.get("how", "sum")
+    if how == "last":
+        return f"{period.label} (end of period, latest of {n} months)"
+    if how == "average":
+        return f"{period.label} (monthly average over {n} months)"
+    return f"{period.label} (sum of {n} months)"
 
 
 def value_at(
@@ -320,7 +336,7 @@ def value_at(
     """Value for one month, or the sum for a quarter/year. None if no data."""
     p = parse_period(period)
     months, notes = monthly(series)
-    total = _period_total(months, p)
+    total = _period_total(months, p, aggregation_of(metric) if metric else "sum")
     if total is None:
         return None
 
@@ -427,7 +443,8 @@ def compare_periods(
     """Compare two months, quarters (sum) or years (sum): b relative to a."""
     pa, pb = parse_period(period_a), parse_period(period_b)
     months, notes = monthly(series)
-    ta, tb = _period_total(months, pa), _period_total(months, pb)
+    how = aggregation_of(metric) if metric else "sum"
+    ta, tb = _period_total(months, pa, how), _period_total(months, pb, how)
     if ta is None or tb is None:
         return None
 

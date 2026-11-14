@@ -8,6 +8,7 @@ from app.api.routers import (
     company,
     forecast,
     kpi,
+    kpi_import,
 )
 from app.database import engine
 
@@ -32,6 +33,7 @@ app.add_middleware(
 
 app.include_router(company.router)
 app.include_router(kpi.router)
+app.include_router(kpi_import.router)
 app.include_router(auth.router)
 app.include_router(analytics.router)
 app.include_router(forecast.router)

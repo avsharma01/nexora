@@ -30,6 +30,58 @@ METRICS: dict[str, dict] = {
 }
 
 
+DEFAULT_CURRENCY = "INR"
+
+# Company-specific metrics (CSV imports) have no config entry, so their behaviour comes from the
+# words in their name. Keep these lists in step with frontend/lib/nexora/metrics.ts.
+_AVERAGE_WORDS = {
+    "avg", "average", "mean", "rate", "ratio", "margin", "pct", "percent", "percentage", "per",
+    "nps", "score", "aov", "price", "yield", "utilization", "utilisation", "occupancy",
+    "conversion", "retention", "churn", "arpu", "arpa",
+}
+_FLOW_WORDS = {
+    "new", "added", "acquired", "churned", "lost", "signups", "orders", "sales", "spend",
+    "spending", "cost", "costs", "expense", "expenses", "revenue", "income", "payroll", "visits",
+    "sessions", "transactions", "units", "shipments", "deliveries", "tickets", "hires", "leads",
+}
+_STOCK_WORDS = {
+    "customers", "customer", "subscribers", "users", "members", "accounts", "headcount",
+    "employees", "staff", "stores", "outlets", "branches", "locations", "cash", "balance",
+    "inventory", "arr", "mrr", "backlog", "pipeline", "active",
+}
+_MONEY_WORDS = {
+    "revenue", "sales", "income", "expense", "expenses", "cost", "costs", "spend", "spending",
+    "cash", "balance", "profit", "ebitda", "price", "value", "payroll", "salary", "salaries",
+    "budget", "arr", "mrr", "gmv", "aov", "capex", "opex", "fees", "burn", "arpu", "arpa",
+}
+
+
+def _words(metric: str) -> set[str]:
+    return set(re.split(r"[^a-z0-9]+", metric.lower())) - {""}
+
+
+def aggregation_of(metric: str) -> str:
+    """How months combine into a quarter or year: "sum" (flows: revenue, orders, new customers),
+    "last" (stocks: customers, headcount, cash balance = value at the period's end) or
+    "average" (rates and averages: average order value, conversion rate)."""
+    if metric in METRICS:
+        return "sum"
+    words = _words(metric)
+    if words & _AVERAGE_WORDS:
+        return "average"
+    if words & _FLOW_WORDS:
+        return "sum"
+    if words & _STOCK_WORDS:
+        return "last"
+    return "sum"
+
+
+def is_money(metric: str) -> bool:
+    if metric in METRICS:
+        return _is_currency(METRICS[metric].get("unit"))
+    return bool(_words(metric) & _MONEY_WORDS)
+
+
 def display_name(metric: str) -> str:
     return METRICS.get(metric, {}).get("display", metric.replace("_", " ").title())
 
@@ -55,6 +107,8 @@ def company_currency(code: str | None):
 
 def unit_of(metric: str) -> str | None:
     unit = METRICS.get(metric, {}).get("unit")
+    if unit is None and metric and is_money(metric):
+        unit = DEFAULT_CURRENCY  # imported money metric (cash_balance, marketing_spend, ...)
     override = _company_currency.get()
     if override and _is_currency(unit):
         return override
@@ -70,16 +124,43 @@ def resolve_metric(word: str) -> str | None:
     return None
 
 
-def find_metrics(text: str) -> list[str]:
-    """All canonical metrics mentioned in free text, in order of first mention."""
+def extra_metric_phrases(name: str) -> list[str]:
+    """How a question may name a company-specific metric imported from CSV:
+    "cash_flow" -> ["cash flow", "cash flows"], "customers" -> ["customers", "customer"]."""
+    base = name.replace("_", " ").strip().lower()
+    if not base:
+        return []
+    other = base[:-1] if base.endswith("s") and len(base) > 3 else base + "s"
+    return [base, other]
+
+
+def find_metrics(text: str, extra: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """All canonical metrics mentioned in free text, in order of first mention.
+
+    `extra`: the company's own metrics beyond the configured ones (from a CSV import, such as
+    "customers" or "cash_flow"); they are matched by name and returned as stored."""
     text = text.lower()
-    hits: list[tuple[int, str]] = []
-    for name, cfg in METRICS.items():
-        positions = [
-            m.start()
-            for syn in cfg["synonyms"]
-            for m in re.finditer(rf"\b{re.escape(syn)}\b", text)
+    candidates = [(name, cfg["synonyms"]) for name, cfg in METRICS.items()]
+    candidates += [(name, extra_metric_phrases(name)) for name in extra if name not in METRICS]
+    spans: dict[str, list[tuple[int, int]]] = {}
+    for name, phrases in candidates:
+        found = [
+            (m.start(), m.end())
+            for phrase in phrases
+            for m in re.finditer(rf"\b{re.escape(phrase)}\b", text)
         ]
-        if positions:
-            hits.append((min(positions), name))
+        if found:
+            spans[name] = found
+
+    # The most specific name wins: in "new customers", "customers" only matched inside the
+    # "new_customers" phrase, so it is not a separate metric.
+    def inside_other(name: str) -> bool:
+        return all(
+            any(o_start <= start and end <= o_end and (o_end - o_start) > (end - start)
+                for other, other_spans in spans.items() if other != name
+                for o_start, o_end in other_spans)
+            for start, end in spans[name]
+        )
+
+    hits = [(min(s for s, _ in found), name) for name, found in spans.items() if not inside_other(name)]
     return [name for _, name in sorted(hits)]

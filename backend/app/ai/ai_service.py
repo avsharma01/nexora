@@ -32,7 +32,7 @@ from app.ai.facts import (
     value_at,
 )
 from app.ai.intent import Intent, detect_intent
-from app.ai.metrics_config import company_currency, display_name
+from app.ai.metrics_config import METRICS, company_currency, display_name
 from app.ai.prompts import (
     STRICT_RETRY_NOTE,
     insufficient_answer,
@@ -56,6 +56,29 @@ class CompanyNotFoundError(LookupError):
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
+_RELATIVE_PERIOD_RE = re.compile(
+    r"\b(last|latest|previous|this|current|past)\s+(month|quarter|year)\b|\bytd\b|\byear to date\b",
+    re.IGNORECASE,
+)
+
+
+def _resolved_period_note(question: str, intent: Intent) -> str:
+    """Tell the LLM what "last month" / "this quarter" resolved to. Relative periods are measured
+    from the latest month in the data; left alone, the LLM measures them from today's date and can
+    lead with the wrong month."""
+    if not _RELATIVE_PERIOD_RE.search(question):
+        return ""
+    labels = [p.label for p in intent.periods]
+    if intent.window:
+        labels.append(f"{intent.window[0].label} to {intent.window[1].label}")
+    if not labels:
+        return ""
+    return (
+        f"\nRESOLVED PERIOD: the relative period in the question means {', '.join(labels)} "
+        "(measured from the latest month in the data). Answer for that period first."
+    )
+
 
 def _month(d: date) -> Period:
     return Period("month", d.year, d.month)
@@ -294,16 +317,20 @@ def _ask(
     def refuse_data():
         return done("insufficient_data", insufficient_answer(company.name, available_text))
 
+    # Metrics beyond revenue/expenses/profit (CSV imports: customers, average_order_value, ...).
+    extra_metrics = [m for m in available if m not in METRICS]
+
     # 1. Guard (before any data reaches the LLM)
     verdict = guard.check(
-        question, company_id, data_access.list_companies(db), history, use_model=use_guard_model
+        question, company_id, data_access.list_companies(db), history, use_model=use_guard_model,
+        extra_metrics=extra_metrics,
     )
     meta["guard"] = {"reason": verdict.reason, "detail": verdict.detail, "injection_score": verdict.injection_score}
     if not verdict.allowed:
         return refuse_scope()
 
     # 2. Intent
-    intent = detect_intent(question, latest, history)
+    intent = detect_intent(question, latest, history, extra_metrics)
     meta["intent"] = {"code": intent.code, "name": intent.intent, "metrics": intent.metrics,
                       "periods": [p.key for p in intent.periods],
                       "window": [p.key for p in intent.window] if intent.window else None}
@@ -334,7 +361,7 @@ def _ask(
     messages = [
         {"role": "system", "content": system_prompt(company.name, available_text, example)},
         *history,
-        {"role": "user", "content": f"CONTEXT:\n{context.text}\n\nQUESTION: {question}"},
+        {"role": "user", "content": f"CONTEXT:\n{context.text}\n\nQUESTION: {question}{_resolved_period_note(question, intent)}"},
     ]
     reply = llm.chat(messages)
     answer = clean_text(reply.text)

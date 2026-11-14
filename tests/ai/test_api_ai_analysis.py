@@ -26,7 +26,7 @@ def client():
 @pytest.fixture
 def users(db):
     created = {}
-    for role in (UserRole.ADMIN, UserRole.VIEWER):
+    for role in (UserRole.ADMIN, UserRole.ANALYST):
         user = User(
             email=f"ai-test-{role.value}-{uuid.uuid4().hex[:8]}@example.test",
             hashed_password=hash_password("not-used"),
@@ -65,7 +65,7 @@ def test_answer_keeps_old_fields_adds_new_ones_and_logs(client, db, users, fake_
     response = client.post(
         URL.format(company_id),
         json={"question": "What was revenue in March 2025?"},
-        headers=auth(users["viewer"]),
+        headers=auth(users["analyst"]),
     )
     assert response.status_code == 200
     body = response.json()
@@ -82,7 +82,7 @@ def test_answer_keeps_old_fields_adds_new_ones_and_logs(client, db, users, fake_
     assert body["generated_at"].endswith("Z")
 
     row = db.get(AIInsight, body["insight_id"])
-    assert row.user_id == users["viewer"].id
+    assert row.user_id == users["analyst"].id
     assert row.company_id == company_id
     assert row.status == "answered"
     assert row.model == "fake-model"
@@ -120,7 +120,7 @@ def test_follow_up_history_is_accepted(client, users, fake_ids, monkeypatch):
                 {"role": "assistant", "content": "Revenue in March 2025 was 82,97,362 INR."},
             ],
         },
-        headers=auth(users["viewer"]),
+        headers=auth(users["analyst"]),
     )
     assert response.status_code == 200
     assert response.json()["status"] == "answered"

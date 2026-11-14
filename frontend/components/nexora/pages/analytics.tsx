@@ -4,17 +4,25 @@ import { useState } from 'react'
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, AlertTriangle, TrendingDown, TrendingUp } from 'lucide-react'
 import { change, extreme, type MonthRow } from '@/lib/nexora/data'
+import { metricInfo } from '@/lib/nexora/metrics'
 import { amount, compact, monthLabel, pct } from '@/lib/nexora/format'
 import { axis, Card, ChartTooltip, PageTitle, SectionHeader } from '../ui'
 import { useWorkspace } from '../workspace'
 
-type Key = 'revenue' | 'expenses' | 'profit' | 'margin'
-const CHARTS: [Key, string, string][] = [
-  ['revenue', 'Revenue', 'var(--chart-1)'],
-  ['expenses', 'Expenses', 'var(--chart-4)'],
-  ['profit', 'Profit', 'var(--good)'],
-  ['margin', 'Profit margin', 'var(--chart-1)'],
+type Kind = 'money' | 'pct' | 'count'
+interface ChartSpec { key: string; title: string; color: string; kind: Kind; inverse?: boolean; get: (r: MonthRow) => number | null }
+const CORE_CHARTS: ChartSpec[] = [
+  { key: 'revenue', title: 'Revenue', color: 'var(--chart-1)', kind: 'money', get: (r) => r.revenue },
+  { key: 'expenses', title: 'Expenses', color: 'var(--chart-4)', kind: 'money', inverse: true, get: (r) => r.expenses },
+  { key: 'profit', title: 'Profit', color: 'var(--good)', kind: 'money', get: (r) => r.profit },
+  { key: 'margin', title: 'Profit margin', color: 'var(--chart-1)', kind: 'pct', get: (r) => r.margin },
 ]
+/** One chart per imported metric (customers, orders, ...). */
+const extraCharts = (extras: string[]): ChartSpec[] =>
+  extras.map((m) => {
+    const info = metricInfo(m)
+    return { key: m, title: info.label, color: 'var(--chart-4)', kind: info.money ? 'money' : 'count', inverse: !info.higherIsBetter, get: (r) => r.extras[m] ?? null }
+  })
 const RANGES = [6, 12, 24, 0] as const
 
 export function AnalyticsPage() {
@@ -35,43 +43,56 @@ export function AnalyticsPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        {CHARTS.map(([key, title, color]) => <MiniChart key={key} rows={rows} k={key} title={title} color={color} unit={unit} />)}
+        {CORE_CHARTS.map((c) => <MiniChart key={c.key} rows={rows} spec={c} unit={unit} />)}
       </div>
+
+      {data.extras.length > 0 && (
+        <>
+          <SectionHeader title="More metrics" subtitle={`${data.extras.length} more ${data.extras.length === 1 ? 'metric' : 'metrics'} from this company's data`} />
+          <div className="grid gap-6 md:grid-cols-2">
+            {extraCharts(data.extras).map((c) => <MiniChart key={c.key} rows={rows} spec={c} unit={unit} />)}
+          </div>
+        </>
+      )}
 
       <Card className="p-5">
         <SectionHeader title="Key trends" subtitle="Signals detected in the selected period" />
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{signals(rows, unit).map((s) => <Trend key={s.title} {...s} />)}</div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{[...signals(rows, unit), ...extraSignals(rows, data.extras, unit)].map((s) => <Trend key={s.title} {...s} />)}</div>
       </Card>
     </div>
   )
 }
 
-function MiniChart({ rows, k, title, color, unit }: { rows: MonthRow[]; k: Key; title: string; color: string; unit: string | null }) {
-  const first = rows.find((r) => r[k] !== null)?.[k] ?? null
-  const last = rows.at(-1)?.[k] ?? null
-  const isPct = k === 'margin'
+function MiniChart({ rows, spec, unit }: { rows: MonthRow[]; spec: ChartSpec; unit: string | null }) {
+  const { title, color, kind } = spec
+  const series = rows.map((r) => ({ month: r.month, value: spec.get(r) }))
+  const known = series.filter((p) => p.value !== null)
+  const first = known[0]?.value ?? null
+  const last = known.at(-1)?.value ?? null
+  const isPct = kind === 'pct'
+  const u = kind === 'money' ? unit : null
   const move = isPct ? (first !== null && last !== null ? last - first : null) : change(first, last)
-  const fmt = (v: number) => (isPct ? `${v.toFixed(1)}%` : amount(v, unit))
+  const fmt = (v: number) => (isPct ? `${v.toFixed(1)}%` : amount(v, u))
   return (
     <Card className="p-5">
       <SectionHeader
         title={title}
-        subtitle={last === null ? 'n/a' : `Latest ${isPct ? `${last.toFixed(1)}%` : compact(last, unit)}`}
+        subtitle={last === null ? 'n/a' : `Latest ${isPct ? `${last.toFixed(1)}%` : compact(last, u)}`}
         action={
-          <span className={`text-xs font-semibold tabular ${move === null ? 'text-faint' : (move >= 0) !== (k === 'expenses') ? 'text-good' : 'text-bad'}`}>
+          <span className={`text-xs font-semibold tabular ${move === null ? 'text-faint' : (move >= 0) !== !!spec.inverse ? 'text-good' : 'text-bad'}`}>
             {move === null ? 'n/a' : isPct ? `${move >= 0 ? '+' : ''}${move.toFixed(1)} pts` : pct(move)} <span className="font-normal text-faint">over the period</span>
           </span>
         }
       />
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={rows} margin={{ left: 0, right: 4 }}>
+          <LineChart data={series} margin={{ left: 0, right: 4 }}>
             <CartesianGrid vertical={false} stroke="var(--border)" />
             <XAxis dataKey="month" {...axis} tickFormatter={(m) => monthLabel(`${m}-01`).replace(' 20', " '")} minTickGap={28} />
-            <YAxis {...axis} width={isPct ? 40 : 56} tickFormatter={(v) => (isPct ? `${v.toFixed(0)}%` : compact(v, unit))} />
+            <YAxis {...axis} width={isPct ? 40 : 56} tickFormatter={(v) => (isPct ? `${v.toFixed(0)}%` : compact(v, u))} />
             <Tooltip content={<ChartTooltip format={fmt} />} cursor={{ stroke: 'rgb(var(--tint-rgb) / 0.15)' }} />
             <ReferenceLine y={0} stroke="rgb(var(--tint-rgb) / 0.15)" />
-            <Line type="monotone" dataKey={k} name={title} stroke={color} strokeWidth={2.25} dot={false} />
+            <Line type="monotone" dataKey="value" name={title} stroke={color} strokeWidth={2.25} dot={false} connectNulls />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -110,6 +131,26 @@ function signals(rows: MonthRow[], unit: string | null): Signal[] {
       : { title: 'Peak revenue month', text: best ? `${monthLabel(best.date)}: ${amount(best.revenue, unit)}.` : 'n/a', icon: Activity, tone: 'gray' },
   )
   return out
+}
+
+/** One signal per imported metric: how it moved over the selected period. */
+function extraSignals(rows: MonthRow[], extras: string[], unit: string | null): Signal[] {
+  return extras.flatMap((m) => {
+    const info = metricInfo(m)
+    const known = rows.filter((r) => r.extras[m] !== null && r.extras[m] !== undefined)
+    if (known.length < 2) return []
+    const a = known[0], b = known.at(-1)!
+    const move = change(a.extras[m], b.extras[m])
+    if (move === null) return []
+    const u = info.money ? unit : null
+    const good = (move >= 0) === info.higherIsBetter
+    return [{
+      title: `${info.label} ${Math.round(move * 10) === 0 ? 'flat' : move > 0 ? 'up' : 'down'} ${pct(Math.abs(move), false)}`,
+      text: `From ${amount(a.extras[m], u)} (${monthLabel(a.date)}) to ${amount(b.extras[m], u)} (${monthLabel(b.date)}).`,
+      icon: move >= 0 ? TrendingUp : TrendingDown,
+      tone: Math.round(move * 10) === 0 ? 'gray' : good ? 'good' : 'bad',
+    } satisfies Signal]
+  })
 }
 
 function Trend({ title, text, icon: Icon, tone }: Signal) {

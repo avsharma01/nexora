@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Check, FileSpreadsheet, Pencil, Plus, Trash2, X } from 'lucide-react'
 import {
-  ApiError, createKpi, deleteCompany, deleteKpi, describeError, updateCompany, updateKpi, type KPI,
+  ApiError, createKpi, deleteCompany, deleteKpi, describeError, importKpis, updateCompany, updateKpi, type KPI,
 } from '@/lib/nexora/api'
 import { trailingYear } from '@/lib/nexora/data'
+import { metricInfo } from '@/lib/nexora/metrics'
+import { CsvPicker, ImportErrors, importSummary, type PickedCsv } from '../csv-import'
 import { amount, compact, monthLabel, titleCase } from '@/lib/nexora/format'
 import type { Action } from '@/lib/nexora/permissions'
 import { AccessRestricted, Badge, Card, ConfirmButton, Field, inputCls, Notice, PageTitle, SectionHeader } from '../ui'
@@ -13,15 +15,18 @@ import { useWorkspace } from '../workspace'
 
 // Actions can be opened from the URL (#company/edit, #kpi/new, ...), so a shared link to an action
 // the viewer's role can't perform shows "Access restricted" instead of a form.
-type Mode = null | 'company/edit' | 'kpi/new'
+type Mode = null | 'company/edit' | 'kpi/new' | 'kpi/import'
 const MODE_ACTION: Record<Exclude<Mode, null>, [Action, string]> = {
   'company/edit': ['company:update', 'edit company details'],
   'kpi/new': ['kpi:create', 'add KPI records'],
+  'kpi/import': ['kpi:create', 'import KPI records'],
 }
 const readMode = (): Mode => {
   const h = typeof window === 'undefined' ? '' : window.location.hash.replace('#', '')
-  return h === 'company/edit' || h === 'kpi/new' ? h : null
+  return h in MODE_ACTION ? (h as Mode) : null
 }
+/** Money metrics (revenue, cash_balance, ...) use the company's currency; counts (customers, orders) don't. */
+const isMoney = (metric: string) => metricInfo(metric).money
 const setHash = (m: Mode) => history.replaceState(null, '', m ? `#${m}` : window.location.pathname + window.location.search)
 
 const PAGE = 24
@@ -33,6 +38,7 @@ export function CompanyPage() {
   const [busy, setBusy] = useState(false)
   const [metricFilter, setMetricFilter] = useState('all')
   const [showAll, setShowAll] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
 
   useEffect(() => {
     const sync = () => setModeState(readMode())
@@ -40,7 +46,7 @@ export function CompanyPage() {
     window.addEventListener('hashchange', sync)
     return () => window.removeEventListener('hashchange', sync)
   }, [])
-  const setMode = (m: Mode) => { setHash(m); setModeState(m); setMsg(null) }
+  const setMode = (m: Mode) => { setHash(m); setModeState(m); setMsg(null); setImportError(null) }
 
   const kpis = useMemo(
     () => [...(data?.kpis ?? [])].sort((a, b) => b.metric_date.localeCompare(a.metric_date) || a.metric_name.localeCompare(b.metric_name)),
@@ -66,6 +72,25 @@ export function CompanyPage() {
       if (err instanceof ApiError && err.status === 401) { expired(); return false }
       setMsg({ tone: 'bad', text: describeError(err, ctx) })
       return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runImport(csv: PickedCsv) {
+    if (!company) return
+    setBusy(true)
+    setMsg(null)
+    setImportError(null)
+    try {
+      const r = await importKpis(company.id, csv.text, session.token)
+      await reload()
+      setMode(null)
+      setMsg({ tone: 'good', text: `Imported ${importSummary(r)}.` })
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return expired()
+      if (err instanceof ApiError && err.status === 422) setImportError(err.message)
+      else setMsg({ tone: 'bad', text: describeError(err, { notFound: 'This company no longer exists.' }) })
     } finally {
       setBusy(false)
     }
@@ -164,11 +189,18 @@ export function CompanyPage() {
               <option value="all" className="bg-popover">All metrics</option>
               {metrics.map((m) => <option key={m} value={m} className="bg-popover">{titleCase(m)}</option>)}
             </select>
+            {can('kpi:create') && mode !== 'kpi/import' && (
+              <button type="button" className="button-secondary" onClick={() => setMode('kpi/import')}><FileSpreadsheet className="size-3.5" /> Import CSV</button>
+            )}
             {can('kpi:create') && mode !== 'kpi/new' && (
               <button type="button" className="button-primary" onClick={() => setMode('kpi/new')}><Plus className="size-3.5" /> Add KPI</button>
             )}
           </div>
         </div>
+
+        {mode === 'kpi/import' && !restricted && (
+          <KpiImportForm busy={busy} onImport={runImport} onCancel={() => setMode(null)} error={importError && <ImportErrors message={importError} />} />
+        )}
 
         {mode === 'kpi/new' && !restricted && (
           <NewKpiForm
@@ -251,8 +283,10 @@ function KpiRow({ kpi, unit, canEdit, canDelete, busy, onSave, onDelete }: {
             <button type="submit" disabled={busy || !valid} className="icon-button size-8" aria-label="Save"><Check className="size-4" /></button>
             <button type="button" onClick={() => { setEditing(false); setDraft(String(kpi.metric_value)) }} className="icon-button size-8" aria-label="Cancel"><X className="size-4" /></button>
           </form>
-        ) : (
+        ) : isMoney(kpi.metric_name) ? (
           amount(kpi.metric_value, unit)
+        ) : (
+          kpi.metric_value.toLocaleString(undefined, { maximumFractionDigits: 2 })
         )}
       </td>
       <td className="px-5 py-2.5 text-right">
@@ -269,14 +303,16 @@ function KpiRow({ kpi, unit, canEdit, canDelete, busy, onSave, onDelete }: {
   )
 }
 
-function CompanyForm({ initial, busy, onSave, onCancel }: {
+function CompanyForm({ initial, busy, onSave, onCancel, withCsv = false, error }: {
   initial: { name: string; industry: string; description: string }; busy: boolean
-  onSave: (v: { name: string; industry: string; description: string }) => void; onCancel: () => void
+  onSave: (v: { name: string; industry: string; description: string }, csv: PickedCsv | null) => void; onCancel: () => void
+  withCsv?: boolean; error?: React.ReactNode
 }) {
   const [v, setV] = useState(initial)
+  const [csv, setCsv] = useState<PickedCsv | null>(null)
   return (
     <Card strong className="p-6">
-      <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); if (v.name.trim()) onSave(v) }}>
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); if (v.name.trim()) onSave(v, csv) }}>
         <Field label="Company name"><input required maxLength={150} value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} className={inputCls} /></Field>
         <Field label="Industry"><input value={v.industry} onChange={(e) => setV({ ...v, industry: e.target.value })} className={inputCls} /></Field>
         <div className="sm:col-span-2">
@@ -284,8 +320,18 @@ function CompanyForm({ initial, busy, onSave, onCancel }: {
             <textarea rows={3} value={v.description} onChange={(e) => setV({ ...v, description: e.target.value })} className={`${inputCls} h-auto py-2`} />
           </Field>
         </div>
+        {withCsv && (
+          <div className="sm:col-span-2">
+            <Field label="Monthly financial records (optional CSV)">
+              <CsvPicker value={csv} onChange={setCsv} disabled={busy} />
+            </Field>
+          </div>
+        )}
+        {error && <div className="sm:col-span-2">{error}</div>}
         <div className="flex gap-2 sm:col-span-2">
-          <button type="submit" disabled={busy || !v.name.trim()} className="button-primary">Save details</button>
+          <button type="submit" disabled={busy || !v.name.trim()} className="button-primary">
+            {withCsv ? (csv ? 'Create company & import' : 'Create company') : 'Save details'}
+          </button>
           <button type="button" onClick={onCancel} className="button-secondary">Cancel</button>
         </div>
       </form>
@@ -293,8 +339,29 @@ function CompanyForm({ initial, busy, onSave, onCancel }: {
   )
 }
 
-export function NewCompanyForm({ busy, onSave, onCancel }: { busy: boolean; onSave: (v: { name: string; industry: string; description: string }) => void; onCancel: () => void }) {
-  return <CompanyForm initial={{ name: '', industry: '', description: '' }} busy={busy} onSave={onSave} onCancel={onCancel} />
+export function NewCompanyForm({ busy, onSave, onCancel, error }: {
+  busy: boolean; onSave: (v: { name: string; industry: string; description: string }, csv: PickedCsv | null) => void
+  onCancel: () => void; error?: React.ReactNode
+}) {
+  return <CompanyForm initial={{ name: '', industry: '', description: '' }} busy={busy} onSave={onSave} onCancel={onCancel} withCsv error={error} />
+}
+
+/** "Import CSV" on the Company page: add or replace months for this company. */
+function KpiImportForm({ busy, onImport, onCancel, error }: {
+  busy: boolean; onImport: (csv: PickedCsv) => void; onCancel: () => void; error?: React.ReactNode
+}) {
+  const [csv, setCsv] = useState<PickedCsv | null>(null)
+  return (
+    <form className="flex flex-col gap-3 border-b border-border bg-tint/[0.02] p-5" onSubmit={(e) => { e.preventDefault(); if (csv) onImport(csv) }}>
+      <CsvPicker value={csv} onChange={setCsv} disabled={busy} />
+      <p className="text-[11px] text-muted-foreground">A month that already has a value for the same metric is replaced; other months are left as they are.</p>
+      {error}
+      <div className="flex gap-2">
+        <button type="submit" disabled={busy || !csv} className="button-primary h-10">Import</button>
+        <button type="button" onClick={onCancel} className="button-secondary h-10">Cancel</button>
+      </div>
+    </form>
+  )
 }
 
 function NewKpiForm({ metrics, busy, onSave, onCancel }: {

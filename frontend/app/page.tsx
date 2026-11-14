@@ -5,7 +5,8 @@ import { Building2, SearchX } from 'lucide-react'
 import type { Session } from '@/lib/nexora/api'
 import { Login } from '@/components/nexora/login'
 import { Shell } from '@/components/nexora/shell'
-import { Empty, ErrorBox, PageSkeleton } from '@/components/nexora/ui'
+import { AccessRestricted, Empty, ErrorBox, PageSkeleton } from '@/components/nexora/ui'
+import { PAGE_ACTION } from '@/lib/nexora/permissions'
 import { useWorkspace, WorkspaceProvider } from '@/components/nexora/workspace'
 import { Dashboard } from '@/components/nexora/pages/dashboard'
 import { Financials } from '@/components/nexora/pages/financials'
@@ -14,7 +15,7 @@ import { Forecast } from '@/components/nexora/pages/forecast'
 import { AnalystPage } from '@/components/nexora/pages/analyst'
 import { Portfolio } from '@/components/nexora/pages/portfolio'
 import { CompanyPage } from '@/components/nexora/pages/company'
-import { Anomalies, Reports, Scenarios, SettingsPage } from '@/components/nexora/pages/more'
+import { Reports, Scenarios, SettingsPage } from '@/components/nexora/pages/more'
 
 const KEY = 'nexora.session'
 const save = (s: Session) => { try { sessionStorage.setItem(KEY, JSON.stringify(s)) } catch { /* storage blocked */ } }
@@ -57,18 +58,21 @@ export default function Page() {
 }
 
 function Current() {
-  const { page, company, companies, companiesError, data, loading, error, reload, can } = useWorkspace()
+  const { page, company, companies, companiesError, data, loading, error, reload, can, go } = useWorkspace()
+
+  // A page the role can't use (e.g. Viewer opening Forecast from a saved link) explains why instead.
+  const need = PAGE_ACTION[page]
+  if (need && !can(need)) return <AccessRestricted what={`use ${page}`} onBack={() => go('Dashboard')} />
 
   if (companiesError) return <ErrorBox message={companiesError} action={<button type="button" onClick={() => location.reload()} className="font-semibold underline underline-offset-4">Try again</button>} />
   if (page === 'Settings') return <SettingsPage />
-  if (page === 'Anomalies') return <Anomalies />
   if (page === 'Portfolio') return <Portfolio />
   if (companies && companies.length === 0)
     return (
       <Empty
         icon={Building2}
         title="No companies yet"
-        text={can('company:create') ? 'Create the first one from the Portfolio page.' : 'An admin or analyst needs to add a company first.'}
+        text={can('company:create') ? 'Create the first one from the Portfolio page.' : 'An admin needs to add a company first.'}
       />
     )
   if (error?.notFound) return <Empty icon={SearchX} title="Company not found" text="It may have been deleted. Pick another company from the switcher at the top." />

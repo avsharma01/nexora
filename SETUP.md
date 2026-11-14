@@ -81,7 +81,7 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:3000**, click **Sign in as Admin / Analyst / Viewer** (it fills the form), then press **Sign in**.
+Open **http://localhost:3000**, and sign in with one of the demo accounts below (type the email and password).
 
 ## Demo accounts (DEMO ONLY)
 
@@ -89,18 +89,37 @@ Created by `scripts/seed_demo_users.py`. The passwords are public, so **never ru
 
 | Email | Role | Password |
 |---|---|---|
-| admin@nexora.demo | Admin: everything, including deletes | nexora-demo-admin |
-| analyst@nexora.demo | Analyst: create/edit companies and KPIs | nexora-demo-analyst |
-| viewer@nexora.demo | Viewer: read, forecast, AI analyst | nexora-demo-viewer |
+| admin@nexora.demo | Admin: everything; the only role that changes data | nexora-demo-admin |
+| analyst@nexora.demo | Analyst: AI analyst, forecasts, scenarios, reports and exports | nexora-demo-analyst |
+| viewer@nexora.demo | Viewer: read-only dashboards | nexora-demo-viewer |
 
-The demo buttons show in `npm run dev`. A production build (`npm run build && npm start`) shows them only
-when built with `NEXT_PUBLIC_DEMO_MODE=true`. Public sign-up always creates a Viewer.
+The login page does not list these accounts; type them in. Public sign-up always creates a Viewer.
 
 ## Already had a database before 2026-10-08?
 
 `init_db` only creates missing tables; it never changes existing ones. If your Docker volume is older than
 develop `a459a1f` (Athira's data layer), back it up and run `docs/db/upgrade_2026-10-08.sql` (instructions
 are at the top of that file). A **fresh** database from step 3 doesn't need it.
+
+## Importing a company's financials (CSV)
+
+Admin can import monthly data in two places: **New company** (header button, or Portfolio)
+creates the company and its data in one step, and **Company → Import CSV** adds or replaces months for an
+existing company. Use **Template** in either form to download an example.
+
+```csv
+period,revenue,expenses,profit,customers
+2025-01,520000,370000,150000,1200
+2025-02,531000,372500,,1240
+```
+
+- One row per **month** (`2025-01`, `2025-01-01`, `2025/01` or `01/2025`). Quarterly or yearly totals are
+  rejected, because charts, forecasts and the AI analyst build quarters and years by adding up months.
+- Revenue, expenses and profit get charts and forecasts. Any other column (customers, cash flow, ...) is
+  stored as its own metric, listed on the Company page and answerable by the AI analyst.
+- An empty profit cell is calculated as revenue − expenses.
+- The import is all or nothing: any bad row is reported (row and column) and nothing is saved. Re-importing
+  a month replaces that month's value instead of adding a second row.
 
 ## Checks
 

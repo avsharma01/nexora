@@ -3,10 +3,8 @@
 import { useEffect, useState } from 'react'
 import { ArrowUpRight, Eye, EyeOff, Loader2, TriangleAlert } from 'lucide-react'
 import { ApiError, describeError, health, login, register, type Session } from '@/lib/nexora/api'
-import { DEMO_ACCOUNTS, DEMO_ENABLED } from '@/lib/nexora/demo'
 import { ThemeToggle } from './theme-toggle'
 import { Mark } from './ui'
-
 
 export function Login({ onSignedIn, notice }: { onSignedIn: (s: Session) => void; notice?: string }) {
   const [signup, setSignup] = useState(false)
@@ -99,29 +97,9 @@ export function Login({ onSignedIn, notice }: { onSignedIn: (s: Session) => void
         <form onSubmit={submit} noValidate className="glass-strong rise rounded-3xl p-7 sm:p-8">
           <p className="text-sm font-medium text-muted-foreground">{signup ? 'Create your account' : 'Welcome back'}</p>
           <h2 className="mt-2 text-3xl font-semibold tracking-tight">{signup ? 'Join your workspace' : 'Sign in to Nexora'}</h2>
-          <p className="mt-2 text-sm text-muted-foreground">{signup ? 'New accounts start as Viewer, which can use every page.' : 'Use your NEXORA backend account.'}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{signup ? 'New accounts start as Viewer (read-only dashboards). An admin can give you more access.' : 'Use your NEXORA backend account.'}</p>
 
           {notice && !error && <p className="mt-6 rounded-xl border border-warn/25 bg-warn-soft px-3 py-2 text-sm text-warn">{notice}</p>}
-
-          {DEMO_ENABLED && !signup && (
-            <div className="mt-6 rounded-2xl border border-dashed border-tint/20 p-3">
-              <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Demo accounts · fill in, then press Sign in</p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                {DEMO_ACCOUNTS.map((a) => (
-                  <button
-                    key={a.email}
-                    type="button"
-                    onClick={() => { setEmail(a.email); setPassword(a.password); setError(null) }}
-                    aria-pressed={email === a.email}
-                    className={`rounded-xl border px-3 py-2 text-left transition ${email === a.email ? 'border-tint/30 bg-tint/[0.08]' : 'border-border bg-tint/[0.02] hover:bg-tint/[0.05]'}`}
-                  >
-                    <span className="block text-xs font-semibold">Sign in as {a.label}</span>
-                    <span className="block truncate text-[11px] text-muted-foreground">{a.email}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="mt-7 flex flex-col gap-4">
             <label className="text-sm font-medium">

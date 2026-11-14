@@ -68,7 +68,7 @@ python -m app.seed_db
 
 Two seed scripts create demo accounts. Run either (or both) from `backend/`.
 
-| Role | `python -m scripts.seed_demo_users` (login-page buttons) | `python -m app.seed_db` |
+| Role | `python -m scripts.seed_demo_users` | `python -m app.seed_db` |
 | --- | --- | --- |
 | Admin | `admin@nexora.demo` / `nexora-demo-admin` | `admin@nexora.io` / `demo123` |
 | Analyst | `analyst@nexora.demo` / `nexora-demo-analyst` | `analyst@nexora.io` / `demo123` |
@@ -76,8 +76,8 @@ Two seed scripts create demo accounts. Run either (or both) from `backend/`.
 
 What each role can do:
 
-- **Admin**: everything, including deleting companies and KPI rows
-- **Analyst**: view everything, create and edit companies and KPI rows (no deletes)
-- **Viewer**: read-only (dashboards, analytics, forecast, AI analyst)
+- **Admin**: everything, and the only role that changes data (create, edit and delete companies and KPI rows, CSV import)
+- **Analyst**: the analysis tools: AI analyst, forecasts, scenario simulator, reports and CSV exports (no data changes)
+- **Viewer**: read-only dashboards (dashboard, company, financials, portfolio, analytics)
 
 Public sign-up always creates a Viewer and needs a password of at least 8 characters.

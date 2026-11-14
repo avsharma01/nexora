@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, ArrowUpRight, Bot, Building2, CircleDollarSign, Download, Gauge, Sparkles, TrendingDown, TrendingUp, Trophy } from 'lucide-react'
 import { ApiError, askAnalyst, type AiResponse } from '@/lib/nexora/api'
-import { change, download, extreme, toCsv, trailingYear } from '@/lib/nexora/data'
+import { change, download, extreme, flatRow, latestTwo, toCsv, trailingYear } from '@/lib/nexora/data'
+import { metricInfo } from '@/lib/nexora/metrics'
 import { amount, compact, monthLabel, pct, titleCase } from '@/lib/nexora/format'
 import { axis, Card, ChartTooltip, Delta, ErrorBox, PageTitle, SectionHeader, Sparkline } from '../ui'
 import { useWorkspace } from '../workspace'
@@ -15,7 +16,7 @@ import { AnswerText, currencyOf, errorText } from './analyst'
 const insightCache = new Map<string, AiResponse>()
 
 export function Dashboard() {
-  const { session, company, data, unit, go, companies, selectCompany, learnUnit, expired, dataVersion } = useWorkspace()
+  const { session, company, data, unit, go, companies, selectCompany, learnUnit, expired, dataVersion, can } = useWorkspace()
   const [range, setRange] = useState<12 | 24 | 0>(24)
   const [insight, setInsight] = useState<AiResponse | null>(() => (company ? insightCache.get(`${company.id}:${dataVersion}`) ?? null : null))
   const [insightBusy, setInsightBusy] = useState(false)
@@ -68,12 +69,16 @@ export function Dashboard() {
         subtitle={<>Here is <span className="text-foreground">{company.name}</span> up to {monthLabel(last?.date)}.</>}
         action={
           <div className="flex gap-2">
-            <button type="button" className="button-secondary" onClick={() => download(`${company.name} monthly.csv`, toCsv(rows as any))}>
-              <Download className="size-3.5" /> Export CSV
-            </button>
-            <button type="button" className="button-primary" onClick={() => go('AI Analyst')}>
-              <Bot className="size-3.5" /> Ask the analyst
-            </button>
+            {can('report:export') && (
+              <button type="button" className="button-secondary" onClick={() => download(`${company.name} monthly.csv`, toCsv(rows.map(flatRow)))}>
+                <Download className="size-3.5" /> Export CSV
+              </button>
+            )}
+            {can('ai:ask') && (
+              <button type="button" className="button-primary" onClick={() => go('AI Analyst')}>
+                <Bot className="size-3.5" /> Ask the analyst
+              </button>
+            )}
           </div>
         }
       />
@@ -85,7 +90,33 @@ export function Dashboard() {
         <KpiCard icon={Gauge} label="Profit margin" value={last?.margin === null || !last ? 'n/a' : `${last.margin.toFixed(1)}%`} delta={last?.margin !== null && prev?.margin !== null && last && prev ? (last.margin! - prev.margin!) : null} deltaIsPoints spark={rows.slice(-12).map((r) => r.margin)} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+      {data.extras.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <SectionHeader
+            title="More metrics"
+            subtitle={`${data.extras.length} more ${data.extras.length === 1 ? 'metric' : 'metrics'} from this company's data · each tile: latest month vs the one before`}
+          />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {data.extras.map((m) => {
+              const info = metricInfo(m)
+              const { last: v, prev: p } = latestTwo(rows, m)
+              return (
+                <KpiCard
+                  key={m}
+                  icon={info.money ? CircleDollarSign : info.agg === 'average' ? Gauge : Activity}
+                  label={info.label}
+                  value={v !== null && Math.abs(v) < 10_000 ? amount(v, info.money ? unit : null) : compact(v, info.money ? unit : null)}
+                  delta={change(p, v)}
+                  inverse={!info.higherIsBetter}
+                  spark={rows.slice(-12).map((r) => r.extras[m] ?? null)}
+                />
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className={`grid gap-6 ${can('ai:ask') ? 'xl:grid-cols-[1.6fr_1fr]' : ''}`}>
         <Card className="p-5">
           <SectionHeader
             title="Revenue, expenses and profit"
@@ -128,7 +159,7 @@ export function Dashboard() {
           </div>
         </Card>
 
-        <Card strong className="flex flex-col p-5">
+        {can('ai:ask') && <Card strong className="flex flex-col p-5">
           <SectionHeader title="AI business insight" subtitle="From your analyst, grounded in this company's data" action={<span className="flex size-8 items-center justify-center rounded-lg bg-good-soft text-good"><Sparkles className="size-4" /></span>} />
           {insight ? (
             <div className="rise flex-1 space-y-3 text-sm leading-6">
@@ -162,7 +193,7 @@ export function Dashboard() {
               Open analyst <ArrowUpRight className="size-3.5" />
             </button>
           </div>
-        </Card>
+        </Card>}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">

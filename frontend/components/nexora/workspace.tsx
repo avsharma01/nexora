@@ -1,11 +1,11 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ApiError, companyAnalytics, companyKpis, describeError, listCompanies, me,
   type Company, type KPI, type MetricAnalytics, type Session,
 } from '@/lib/nexora/api'
-import { monthly, type MonthRow } from '@/lib/nexora/data'
+import { extraMetrics, monthly, type MonthRow } from '@/lib/nexora/data'
 import { can as canDo, type Action } from '@/lib/nexora/permissions'
 import type { ChatMessage } from './pages/analyst'
 
@@ -16,6 +16,8 @@ export type Page =
 interface CompanyData {
   kpis: KPI[]
   rows: MonthRow[]
+  /** Metrics beyond revenue/expenses/profit (CSV imports), in column order. */
+  extras: string[]
   analytics: MetricAnalytics[]
 }
 
@@ -114,15 +116,21 @@ export function WorkspaceProvider({
 
   useEffect(() => { void reloadCompanies() }, [reloadCompanies])
 
+  // Which company `data` belongs to. Refreshing the SAME company (after a save or import) keeps the
+  // page mounted with its current data; only switching company shows the loading skeleton. Otherwise
+  // every save unmounted the page and its "saved" message was lost.
+  const loadedFor = useRef<number | null>(null)
+
   useEffect(() => {
     if (!companyId) return
     let alive = true
-    setLoading(true)
+    if (loadedFor.current !== companyId) setLoading(true)
     setError(null)
     Promise.all([companyKpis(companyId, session.token), companyAnalytics(companyId, session.token)])
       .then(([kpis, analytics]) => {
         if (!alive) return
-        setData({ kpis, rows: monthly(kpis), analytics: analytics.metrics })
+        setData({ kpis, rows: monthly(kpis), extras: extraMetrics(kpis), analytics: analytics.metrics })
+        loadedFor.current = companyId
         setLoading(false)
       })
       .catch((err) => {

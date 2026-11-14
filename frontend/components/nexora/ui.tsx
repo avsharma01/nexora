@@ -9,7 +9,7 @@ import { ROLE_LABEL } from '@/lib/nexora/permissions'
 /** Role as text (not colour only), straight from the backend's answer. */
 export function RoleBadge({ role }: { role: Role }) {
   return (
-    <span className="inline-flex items-center rounded-md border border-border bg-tint/[0.05] px-2 py-0.5 font-mono text-[10px] font-semibold tracking-[0.12em] text-foreground/85" title="Your role, as reported by the backend">
+    <span className="inline-flex items-center rounded-md border border-role/30 bg-role/[0.12] px-2 py-0.5 font-mono text-[10px] font-semibold tracking-[0.12em] text-role" title="Your role, as reported by the backend">
       {ROLE_LABEL[role]}
     </span>
   )
@@ -230,7 +230,7 @@ export function PageSkeleton() {
 export function Mark({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   const s = size === 'lg' ? 'size-10 text-base' : size === 'sm' ? 'size-7 text-xs' : 'size-9 text-sm'
   return (
-    <span className={`flex shrink-0 items-center justify-center rounded-xl border border-tint/15 bg-gradient-to-b from-tint/[0.16] to-tint/[0.04] font-mono font-semibold text-foreground shadow-[inset_0_1px_0_rgb(var(--tint-rgb) / 0.18)] ${s}`}>
+    <span className={`flex shrink-0 items-center justify-center rounded-xl border border-role/40 bg-gradient-to-b from-role/[0.38] to-role/[0.10] font-mono font-semibold text-foreground shadow-[inset_0_1px_0_rgb(var(--tint-rgb) / 0.18)] ${s}`}>
       N
     </span>
   )

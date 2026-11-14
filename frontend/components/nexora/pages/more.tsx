@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ArrowLeft, Building2, Check, Download, FileText, Minus, Printer, ShieldAlert } from 'lucide-react'
 import type { Action } from '@/lib/nexora/permissions'
-import { aggregate, download, toCsv } from '@/lib/nexora/data'
+import { aggregate, download, flatRow, toCsv } from '@/lib/nexora/data'
 import { amount, compact } from '@/lib/nexora/format'
 import { axis, BrowserCalcBadge, Card, ChartTooltip, PageTitle, IllustrativeBadge, RoleBadge, SectionHeader } from '../ui'
 import { useWorkspace } from '../workspace'
@@ -110,8 +110,8 @@ export function Reports() {
   const { company, data } = useWorkspace()
   if (!company || !data) return null
   const items: [string, string, () => void][] = [
-    ['Monthly performance', 'Revenue, expenses, profit and margin per month', () => download(`${company.name} monthly.csv`, toCsv(data.rows as any))],
-    ['Quarterly summary', 'Months summed into quarters, partial quarters marked', () => download(`${company.name} quarterly.csv`, toCsv(aggregate(data.rows, 'quarter') as any))],
+    ['Monthly performance', 'Revenue, expenses, profit and margin per month', () => download(`${company.name} monthly.csv`, toCsv(data.rows.map(flatRow)))],
+    ['Quarterly summary', 'Months summed into quarters, partial quarters marked', () => download(`${company.name} quarterly.csv`, toCsv(aggregate(data.rows, 'quarter').map(flatRow)))],
     ['Raw KPI rows', 'Exactly as stored in the kpis table', () => download(`${company.name} kpis.csv`, toCsv(data.kpis as any))],
   ]
   return (
@@ -134,12 +134,15 @@ export function Reports() {
 export function SettingsPage() {
   const { session, companies, units, can } = useWorkspace()
   const abilities: [Action, string][] = [
-    ['data:view', 'View companies, KPIs, analytics, forecasts'],
+    ['data:view', 'View dashboards, financials, analytics and the portfolio'],
     ['ai:ask', 'Ask the AI analyst'],
+    ['forecast:run', 'Run forecasts'],
+    ['scenario:use', 'Use the scenario simulator'],
+    ['report:export', 'Download reports and CSV exports'],
     ['company:create', 'Create companies'],
     ['company:update', 'Edit company details'],
     ['company:delete', 'Delete companies'],
-    ['kpi:create', 'Add KPI records'],
+    ['kpi:create', 'Add KPI records and import CSV files'],
     ['kpi:update', 'Edit KPI values'],
     ['kpi:delete', 'Delete KPI records'],
   ]

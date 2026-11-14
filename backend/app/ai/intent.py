@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from app.ai.facts import Period, months_back, previous_period
-from app.ai.metrics_config import find_metrics
+from app.ai.metrics_config import extra_metric_phrases, find_metrics
 
 
 INTENT_CODES = {
@@ -142,10 +142,11 @@ def _has_any(text: str, words: list[str]) -> list[str]:
     return [w for w in words if re.search(rf"\b{re.escape(w)}\b", text)]
 
 
-def is_business_question(text: str) -> bool:
+def is_business_question(text: str, extra_metrics: list[str] | tuple[str, ...] = ()) -> bool:
+    """`extra_metrics`: the company's own metrics (CSV imports) also count as business words."""
     text = text.lower()
     return bool(
-        find_metrics(text)
+        find_metrics(text, extra_metrics)
         or _has_any(text, BUSINESS_WORDS)
         or _has_any(text, UNAVAILABLE_TERMS)
         or _has_any(text, OUTSIDE_DATA_TERMS)
@@ -259,11 +260,15 @@ def detect_intent(
     question: str,
     latest: date | None = None,
     history: list[dict] | None = None,
+    extra_metrics: list[str] | tuple[str, ...] = (),
 ) -> Intent:
+    """`extra_metrics`: this company's metrics beyond revenue/expenses/profit (CSV imports).
+    A term like "customers" is only "unavailable" when the company has no such metric."""
     text = normalize_quarters(question.lower().strip())
-    metrics = find_metrics(text)
+    metrics = find_metrics(text, extra_metrics)
     periods, window = extract_periods(text, latest)
-    unknown = _has_any(text, UNAVAILABLE_TERMS)
+    covered = {p for m in metrics if m in extra_metrics for p in extra_metric_phrases(m)}
+    unknown = [t for t in _has_any(text, UNAVAILABLE_TERMS) if not any(t in p or p in t for p in covered)]
     outside = _has_any(text, OUTSIDE_DATA_TERMS)
 
     from_history = False
@@ -271,7 +276,7 @@ def detect_intent(
         # Follow-up like "And in April?": reuse the metric(s) from the last user turn.
         for turn in reversed(history):
             if turn.get("role") == "user":
-                previous = find_metrics(turn.get("content", ""))
+                previous = find_metrics(turn.get("content", ""), extra_metrics)
                 if previous:
                     metrics, from_history = previous, True
                     break

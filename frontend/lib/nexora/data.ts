@@ -2,9 +2,11 @@
 // the AI analyst never sees these numbers, it computes its own facts in the backend.
 
 import type { KPI } from './api'
+import { combine, metricInfo } from './metrics'
 
 export type Metric = 'revenue' | 'expenses' | 'profit'
 export const METRICS: Metric[] = ['revenue', 'expenses', 'profit']
+export const isCore = (m: string): m is Metric => (METRICS as string[]).includes(m)
 
 export interface MonthRow {
   month: string // "2025-03"
@@ -13,14 +15,30 @@ export interface MonthRow {
   expenses: number | null
   profit: number | null
   margin: number | null // profit / revenue, %
+  /** Every other metric (CSV imports: customers, orders, ...), keyed by lower-case name. */
+  extras: Record<string, number | null>
 }
+
+/** Metrics beyond revenue/expenses/profit, in the order they were first stored (= CSV column order). */
+export function extraMetrics(kpis: KPI[]): string[] {
+  const seen: string[] = []
+  for (const k of [...kpis].sort((a, b) => a.id - b.id)) {
+    const m = k.metric_name.trim().toLowerCase()
+    if (!isCore(m) && !seen.includes(m)) seen.push(m)
+  }
+  return seen
+}
+
+/** Value of any metric (core or extra) in a month or period row. */
+export const valueOf = (row: { extras: Record<string, number | null> } & Partial<Record<Metric, number | null>>, m: string): number | null =>
+  isCore(m) ? row[m] ?? null : row.extras[m] ?? null
 
 /** One row per month. Same rules as the backend: duplicate dates -> last stored row wins; several dates in a month -> latest wins. */
 export function monthly(kpis: KPI[]): MonthRow[] {
-  const byMonth = new Map<string, { date: Partial<Record<Metric, string>>; v: Partial<Record<Metric, number>> }>()
+  const names = extraMetrics(kpis)
+  const byMonth = new Map<string, { date: Record<string, string>; v: Record<string, number> }>()
   for (const k of [...kpis].sort((a, b) => a.id - b.id)) {
-    const m = k.metric_name.trim().toLowerCase() as Metric
-    if (!METRICS.includes(m)) continue
+    const m = k.metric_name.trim().toLowerCase()
     const month = k.metric_date.slice(0, 7)
     const row = byMonth.get(month) ?? { date: {}, v: {} }
     if (!row.date[m] || k.metric_date >= row.date[m]!) {
@@ -42,8 +60,23 @@ export function monthly(kpis: KPI[]): MonthRow[] {
         expenses,
         profit,
         margin: revenue && profit !== null ? (profit / revenue) * 100 : null,
+        extras: Object.fromEntries(names.map((n) => [n, v[n] ?? null])),
       }
     })
+}
+
+/** Latest and previous months that HAVE a value for metric `m` (imported metrics may skip months). */
+export function latestTwo(rows: MonthRow[], m: string) {
+  const withValue = rows.filter((r) => valueOf(r, m) !== null)
+  const last = withValue.at(-1)
+  const prev = withValue.at(-2)
+  return { last: last ? valueOf(last, m) : null, prev: prev ? valueOf(prev, m) : null, lastRow: last, prevRow: prev }
+}
+
+/** Flat object for CSV export: core columns, then one column per extra metric. */
+export function flatRow<T extends { extras: Record<string, number | null> }>(row: T): Record<string, unknown> {
+  const { extras, ...rest } = row
+  return { ...rest, ...extras }
 }
 
 export const change = (prev: number | null | undefined, curr: number | null | undefined) =>
@@ -66,9 +99,11 @@ export interface PeriodRow {
   expenses: number | null
   profit: number | null
   margin: number | null
+  /** Extra metrics combined per their rule: sums for flows, end-of-period for stocks, averages for rates. */
+  extras: Record<string, number | null>
 }
 
-/** Sum months into quarters or years. `months` tells partial periods apart. */
+/** Sum months into quarters or years (extra metrics: see metricInfo().agg). `months` tells partial periods apart. */
 export function aggregate(rows: MonthRow[], grain: Grain): PeriodRow[] {
   const key = (m: string) => {
     const [y, mo] = m.split('-').map(Number)
@@ -87,6 +122,12 @@ export function aggregate(rows: MonthRow[], grain: Grain): PeriodRow[] {
       expenses: sum(g, 'expenses'),
       profit,
       margin: revenue && profit !== null ? (profit / revenue) * 100 : null,
+      extras: Object.fromEntries(
+        Object.keys(g[0]?.extras ?? {}).map((n) => [
+          n,
+          combine(g.map((r) => r.extras[n]).filter((x): x is number => x !== null), metricInfo(n).agg),
+        ]),
+      ),
     }
   })
 }
