@@ -124,6 +124,12 @@ def _values_with_gaps(series, periods: list[Period], metric: str) -> list[Fact]:
     return present
 
 
+def _core_metrics(available: list[str]) -> list[str]:
+    """Profit, revenue, expenses (those present) first; else the company's first metrics."""
+    core = [m for m in ("profit", "revenue", "expenses") if m in available]
+    return core or available[:3]
+
+
 def _clean_history(history: list[dict] | None) -> list[dict]:
     turns = [
         {"role": t["role"], "content": str(t.get("content", ""))[:MAX_HISTORY_CHARS]}
@@ -154,13 +160,15 @@ def plan(
     facts: list[Fact | None] = []
     rows: dict = {}
 
+    # Profile and suggestion answers work from computed facts only (no month-by-month rows,
+    # except for the metric a suggestion is about): with many metrics (CSV imports with 11+)
+    # the rows made the prompt ~3,600 tokens and hit Groq's 8,000 tokens-per-minute limit.
     if intent.intent == "profile":
-        # "Tell me about Cedar Health": latest values + the direction over the last 12 months.
+        # "Tell me about Cedar Health": latest values + the 12-month direction of the core metrics.
         window = _window(intent, latest, DEFAULT_WINDOW_MONTHS)
         facts.extend(latest_summary(db, company_id))
-        for m in available:
+        for m in _core_metrics(available):
             facts.append(trend(series[m], *window, metric=m))
-            rows[m] = series[m][-2:]
         return [f for f in facts if f is not None], rows
 
     if intent.intent == "suggest":
@@ -169,6 +177,7 @@ def plan(
         targets = metrics + [m for m in available if m not in metrics]
         for m in targets:
             facts.append(trend(series[m], *window, metric=m))
+        for m in metrics or _core_metrics(available)[:1]:
             rows[m] = _rows_between(series[m], *window)
         if "revenue" in available and "expenses" in available:
             facts.append(cross_metric_growth(
