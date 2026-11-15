@@ -179,3 +179,28 @@ def test_vague_questions_get_document_excerpts(db, ingested, fake_llm, question)
     result = ai_service.ask(db, ingested["Test Retail Pvt Ltd"], question)
     assert result["meta"]["retrieval"], "query expansion should lift the documents above MIN_SIMILARITY"
     assert "D1 (" in calls[0][-1]["content"]
+
+
+# --- suggestion about a metric the company does not have ------------------------ #
+
+def test_suggestion_about_a_missing_metric_is_refused(monkeypatch, fake_llm):
+    """A CSV-imported company with only "customers": "improve revenue?" -> insufficient_data,
+    not suggestions about customers."""
+    from datetime import date as _date
+    from types import SimpleNamespace
+
+    from app.ai import data_access
+
+    company = SimpleNamespace(id=99, name="Only Customers Co", industry="Retail", description="")
+    monkeypatch.setattr(data_access, "get_company", lambda db, cid: company)
+    monkeypatch.setattr(data_access, "company_currency", lambda db, cid: None)
+    monkeypatch.setattr(data_access, "available_metrics", lambda db, cid: ["customers"])
+    monkeypatch.setattr(data_access, "earliest_date", lambda db, cid: _date(2025, 1, 1))
+    monkeypatch.setattr(data_access, "latest_date", lambda db, cid: _date(2025, 12, 1))
+    monkeypatch.setattr(data_access, "list_companies", lambda db: [(99, "Only Customers Co")])
+    calls = fake_llm(lambda context: "should not be called")
+
+    result = ai_service.ask(None, 99, "How can we improve revenue?", use_guard_model=False)
+    assert result["status"] == "insufficient_data"
+    assert result["meta"]["intent"]["name"] == "suggest"
+    assert calls == []

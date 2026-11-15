@@ -390,7 +390,12 @@ def _ask(
         if not intent.metrics or (intent.intent == "cross_metric" and len(intent.metrics) < 2):
             return refuse_data()
     else:
+        asked = intent.metrics
         intent.metrics = [m for m in intent.metrics if m in available]
+        if intent.intent == "suggest" and asked and not intent.metrics:
+            # "How can we improve revenue?" for a company with no revenue data: say so, rather
+            # than answering with suggestions about other metrics.
+            return refuse_data()
 
     # 3. Facts (all maths in Python)
     facts, rows = plan(db, company_id, intent, latest, available)
