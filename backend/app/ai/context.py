@@ -41,8 +41,11 @@ def build_context(
     rows: dict[str, list[tuple[date, float]]],
     facts: list[Fact],
     excerpts: list[Excerpt] | None = None,
+    description: str | None = None,
 ) -> Context:
     lines = [f"[COMPANY] {company_name} (id {company_id}) · industry: {industry or 'n/a'}"]
+    # The stored company description (quoted data, like document excerpts).
+    lines.append(f'[COMPANY DESCRIPTION] "{" ".join((description or "").split()) or "none recorded"}"')
 
     if coverage:
         start, end = coverage

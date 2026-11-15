@@ -31,6 +31,8 @@ INTENT_CODES = {
     "document": "I10",
     "unknown_metric": "I11",
     "off_topic": "I12",
+    "profile": "I15",
+    "suggest": "I16",
 }
 
 # Words that make a question "about the business" even without a known metric.
@@ -41,6 +43,8 @@ BUSINESS_WORDS = [
     "compare", "comparison", "data", "numbers", "results", "figures", "highest", "lowest",
     "increase", "decrease", "drop", "dropped", "decline", "declined", "rise", "rose",
     "fell", "fall", "forecast", "q1", "q2", "q3", "q4",
+    "improve", "improvement", "improvements", "recommend", "recommendation", "recommendations",
+    "suggest", "suggestion", "suggestions",
 ]
 
 # Things people ask about that NEXORA has no data for (-> insufficient_data, not off-topic).
@@ -122,6 +126,21 @@ _TREND_RE = re.compile(
     r"\b(trend|trends|trended|trending|over time|growing|grow|grew|growth|change|changed|"
     r"evolve\w*|progress\w*|over the (?:last|past)|direction|improving|declining)\b"
 )
+# "What should we do to improve ...?", "How can we increase profit?", "Any recommendations?"
+_SUGGEST_RE = re.compile(
+    r"\b(improve|improvement|improvements|recommend\w*|suggest\w*|advise us|"
+    r"what (?:should|can|could) (?:we|i|the company|they|it|management) (?:do|change|focus on)|"
+    r"(?:strategy|strategies|plan|actions?|steps|priorities) (?:should|can|could) (?:we|i|the company|it) (?:follow|take|adopt|prioriti[sz]e)|"
+    r"how (?:(?:can|could|should|might) (?:[a-z][\w&]*(?: [a-z][\w&]*){0,3})|do (?:we|i)) "
+    r"(?:improve|increase|grow|boost|reduce|cut|lower|raise|fix|turn around|strengthen)|"
+    r"ways to|action plan|next steps|what to focus on)\b"
+)
+# "Tell me about Cedar Health", "What does the company do?", "Describe this company"
+_PROFILE_RE = re.compile(
+    r"\b(tell me about|tell me more about|about (?:this|the|your|our) (?:company|business)|"
+    r"what does [\w&\s.]{1,40}? do\b|what is [\w&\s.]{1,40}? about\b|describe|"
+    r"introduc\w*|profile|background|overview of (?:this|the) (?:company|business))"
+)
 
 
 @dataclass
@@ -152,6 +171,16 @@ def is_business_question(text: str, extra_metrics: list[str] | tuple[str, ...] =
         or _has_any(text, OUTSIDE_DATA_TERMS)
         or _has_any(text, DOCUMENT_TERMS)
     )
+
+
+_COMPANY_REF_RE = re.compile(r"\b(company|business|firm|organi[sz]ation|it|they|we|us|our|you|your)\b")
+
+
+def _points_at_company(text: str, company_name: str) -> bool:
+    """The question refers to the company: a generic word ("this company", "what do we do")
+    or the selected company's name."""
+    name = company_name.lower().strip()
+    return bool(_COMPANY_REF_RE.search(text) or (name and name in text))
 
 
 def _resolve_year(month_or_quarter_last: int, kind: str, explicit_years: list[int], latest: date | None) -> int:
@@ -261,9 +290,11 @@ def detect_intent(
     latest: date | None = None,
     history: list[dict] | None = None,
     extra_metrics: list[str] | tuple[str, ...] = (),
+    company_name: str = "",
 ) -> Intent:
     """`extra_metrics`: this company's metrics beyond revenue/expenses/profit (CSV imports).
-    A term like "customers" is only "unavailable" when the company has no such metric."""
+    A term like "customers" is only "unavailable" when the company has no such metric.
+    `company_name`: the selected company, so "Tell me about Cedar Health" is a profile question."""
     text = normalize_quarters(question.lower().strip())
     metrics = find_metrics(text, extra_metrics)
     periods, window = extract_periods(text, latest)
@@ -286,6 +317,14 @@ def detect_intent(
 
     if outside:
         return make("unknown_metric")
+    # "What should we do to improve profit?": suggestions grounded in the facts (before
+    # document / forecast / lookup, which would otherwise take "strategy" or "next quarter").
+    if _SUGGEST_RE.search(text):
+        return make("suggest")
+    # "Tell me about Cedar Health": company profile (only when no metric is asked about, and the
+    # question points at the company, so "tell me about the weather" stays off-topic).
+    if not metrics and not unknown and _PROFILE_RE.search(text) and _points_at_company(text, company_name):
+        return make("profile")
     # Document questions ("What risks did the board mention?"); a "why" about a
     # metric stays "why" (it also gets document excerpts).
     if _has_any(text, DOCUMENT_TERMS) and not (metrics and _WHY_RE.search(text)):
