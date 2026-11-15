@@ -35,6 +35,7 @@ from app.ai.intent import Intent, detect_intent
 from app.ai.metrics_config import METRICS, company_currency, display_name
 from app.ai.prompts import (
     STRICT_RETRY_NOTE,
+    SUGGESTION_NOTE,
     insufficient_answer,
     out_of_scope_answer,
     system_prompt,
@@ -153,6 +154,31 @@ def plan(
     facts: list[Fact | None] = []
     rows: dict = {}
 
+    if intent.intent == "profile":
+        # "Tell me about Cedar Health": latest values + the direction over the last 12 months.
+        window = _window(intent, latest, DEFAULT_WINDOW_MONTHS)
+        facts.extend(latest_summary(db, company_id))
+        for m in available:
+            facts.append(trend(series[m], *window, metric=m))
+            rows[m] = series[m][-2:]
+        return [f for f in facts if f is not None], rows
+
+    if intent.intent == "suggest":
+        # "How can we improve profit?": the facts a suggestion can point at (asked metric first).
+        window = _window(intent, latest, DEFAULT_WINDOW_MONTHS)
+        targets = metrics + [m for m in available if m not in metrics]
+        for m in targets:
+            facts.append(trend(series[m], *window, metric=m))
+            rows[m] = _rows_between(series[m], *window)
+        if "revenue" in available and "expenses" in available:
+            facts.append(cross_metric_growth(
+                series["expenses"], series["revenue"], *window, metric_a="expenses", metric_b="revenue"
+            ))
+        focus = metrics[0] if metrics else ("profit" if "profit" in available else None)
+        if focus:
+            facts.extend(extremes(series[focus], metric=focus, start=window[0], end=window[1]))
+        return [f for f in facts if f is not None], rows
+
     if intent.intent == "lookup":
         periods = intent.periods or ([_month(latest)] if not intent.window else [])
         for m in metrics:
@@ -216,15 +242,26 @@ def plan(
     return [f for f in facts if f is not None], rows
 
 
-RAG_INTENTS = ("why", "document", "summary")
+RAG_INTENTS = ("why", "document", "summary", "profile", "suggest")
 
 
-def _retrieve(db: Session, company_id: int, question: str, intent: Intent, meta: dict) -> list[Excerpt]:
+# Query expansion for short, vague questions ("Tell me about this company" scores ~0.55 against the
+# documents, below MIN_SIMILARITY; with the company name and these topic words, ~0.75).
+_EXPANSION = {
+    "profile": "{name} company overview: what the business does, what drove the year, strategy and risks",
+    "suggest": "{name} what drove the results, cost pressures, risks, decisions and plans",
+}
+
+
+def _retrieve(
+    db: Session, company_id: int, question: str, intent: Intent, meta: dict, company_name: str = ""
+) -> list[Excerpt]:
     """Document excerpts for this company. Any failure -> no excerpts (facts still work)."""
     if intent.intent not in RAG_INTENTS:
         return []
     # Add the metric and period names so "why" questions match the right section.
-    query = " ".join([question, *(display_name(m) for m in intent.metrics), *(p.label for p in intent.periods)])
+    extra = _EXPANSION.get(intent.intent, "").format(name=company_name)
+    query = " ".join([question, *(display_name(m) for m in intent.metrics), *(p.label for p in intent.periods), extra])
     try:
         excerpts = retrieval.search(db, company_id, query)
     except (EmbeddingError, SQLAlchemyError) as exc:
@@ -330,7 +367,7 @@ def _ask(
         return refuse_scope()
 
     # 2. Intent
-    intent = detect_intent(question, latest, history, extra_metrics)
+    intent = detect_intent(question, latest, history, extra_metrics, company.name)
     meta["intent"] = {"code": intent.code, "name": intent.intent, "metrics": intent.metrics,
                       "periods": [p.key for p in intent.periods],
                       "window": [p.key for p in intent.window] if intent.window else None}
@@ -339,7 +376,7 @@ def _ask(
     if intent.intent in ("unknown_metric", "forecast") or not available:
         # forecast: no forecast data in the context until Phase E
         return refuse_data()
-    if intent.intent not in ("summary", "document"):
+    if intent.intent not in ("summary", "document", "profile", "suggest"):
         intent.metrics = [m for m in intent.metrics if m in available]
         if not intent.metrics or (intent.intent == "cross_metric" and len(intent.metrics) < 2):
             return refuse_data()
@@ -350,13 +387,14 @@ def _ask(
     facts, rows = plan(db, company_id, intent, latest, available)
 
     # 4. Document excerpts (why / document / summary questions only)
-    excerpts = _retrieve(db, company_id, question, intent, meta)
+    excerpts = _retrieve(db, company_id, question, intent, meta, company.name)
     if not facts and not excerpts:
         return refuse_data()
 
     # 5. Context + LLM
     context: Context = build_context(
-        company.name, company.id, company.industry, available, (first, latest), rows, facts, excerpts
+        company.name, company.id, company.industry, available, (first, latest), rows, facts, excerpts,
+        description=company.description,
     )
     messages = [
         {"role": "system", "content": system_prompt(company.name, available_text, example)},
@@ -390,6 +428,11 @@ def _ask(
     status = _status_of(answer)
     if status != "answered":
         return done(status, answer)
+
+    if intent.intent == "suggest":
+        # Added in Python, not by the LLM, so it is always there and always worded the same.
+        answer = f"{answer}\n\n{SUGGESTION_NOTE}"
+        meta["kind"] = "suggestion"
 
     known = {**context.facts, **context.excerpts}
     cited = [tag for tag in dict.fromkeys(_CITATION_RE.findall(answer)) if tag in known]

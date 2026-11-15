@@ -40,7 +40,8 @@ _DIRECTION_WORDS = (
 )
 # Pseudo-citations the model sometimes invents instead of F/D tags.
 _FAKE_CITATION_RE = re.compile(
-    r"\s*\[(?:historical data|computed facts?|context|document excerpts?|data)\]", re.IGNORECASE
+    r"\s*\[(?:historical data|computed facts?|context|document excerpts?|data|company(?: description)?|data coverage)\]",
+    re.IGNORECASE
 )
 # "fell by -49,41,292 INR (-191.2%)" -> "fell by 49,41,292 INR (191.2%)". Not after "to"
 # ("fell to -23,56,941 INR" is a negative level and keeps its sign).

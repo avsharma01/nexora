@@ -130,9 +130,21 @@ def keyword_check(
         return GuardResult(False, "advice", hit)
     if hit := _match(OFF_TOPIC_TASKS, text):
         return GuardResult(False, "off_topic", hit)
-    if not is_business_question(text, extra_metrics) and not is_follow_up(text, history):
+    if not (
+        is_business_question(text, extra_metrics)
+        # "Tell me about Cedar Health" / "What does Cedar Health do?" (a bare "tell me about
+        # cricket" stays off-topic: the profile wording alone isn't enough).
+        or names_own_company(text, company_id, companies)
+        or is_follow_up(text, history)
+    ):
         return GuardResult(False, "off_topic", "no business or metric words")
     return GuardResult(True)
+
+
+def names_own_company(text: str, company_id: int, companies: list[tuple[int, str]]) -> bool:
+    """"Tell me about Cedar Health" while Cedar Health is selected: on topic."""
+    own = next((name for cid, name in companies if cid == company_id), "")
+    return any(re.search(rf"\b{re.escape(v)}\b", text.lower()) for v in _name_variants(own)) if own else False
 
 
 def check(
